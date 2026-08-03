@@ -12,6 +12,8 @@ import { OrdersModule } from './orders/orders.module';
 import { Shipment } from './shipments/entities/shipment.entity';
 import { ShipmentsModule } from './shipments/shipments.module';
 import { User } from './users/entities/user.entity';
+import { ExtractedField } from './documents/entities/extracted-field.entity';
+import { ShipmentFact } from './documents/entities/shipment-fact.entity';
 import { UsersModule } from './users/users.module';
 import { Vessel } from './vessels/entities/vessel.entity';
 import { Voyage } from './vessels/entities/voyage.entity';
@@ -24,7 +26,17 @@ import { VesselsModule } from './vessels/vessels.module';
     TypeOrmModule.forRoot({
       type: 'better-sqlite3',
       database: process.env.DB_PATH || 'kubo.db',
-      entities: [User, Document, Container, Order, Shipment, Vessel, Voyage],
+      entities: [
+        User,
+        Document,
+        ExtractedField,
+        ShipmentFact,
+        Container,
+        Order,
+        Shipment,
+        Vessel,
+        Voyage,
+      ],
       synchronize: true,
     }),
     AuthModule,
