@@ -1,0 +1,424 @@
+{
+  "info": {
+    "_postman_id": "kubo-api-collection-2024",
+    "name": "KUBO API",
+    "description": "KUBO Export Platform – Complete API Collection\n\n## Setup:\n1. Register atau Login untuk mendapatkan access_token\n2. Set variable `token` dengan nilai access_token\n3. Semua request terproteksi otomatis menggunakan Bearer token",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000/api/v1", "type": "string" },
+    { "key": "token", "value": "", "type": "string" },
+    { "key": "containerId", "value": "", "type": "string" },
+    { "key": "orderId", "value": "", "type": "string" },
+    { "key": "documentId", "value": "", "type": "string" }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }]
+  },
+  "item": [
+    {
+      "name": "Auth",
+      "description": "Registrasi dan Login",
+      "item": [
+        {
+          "name": "Register",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.access_token) pm.collectionVariables.set('token', res.access_token);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "name", "value": "Adi Wijaya", "type": "text" },
+                { "key": "email", "value": "adi@umkm.com", "type": "text" },
+                { "key": "password", "value": "Password123!", "type": "text" },
+                { "key": "businessName", "value": "Batik Nusantara", "type": "text" },
+                { "key": "businessType", "value": "Kerajinan Tekstil", "type": "text" },
+                { "key": "ownerAddress", "value": "Jl. Merdeka No. 10, Jakarta", "type": "text" },
+                { "key": "businessAddress", "value": "Jl. Industri No. 5, Bandung", "type": "text" },
+                { "key": "nib", "value": "1234567890123456", "type": "text" },
+                { "key": "umkm_certificate", "type": "file", "src": "", "description": "Upload file PDF/JPG surat keterangan UMKM (opsional)" }
+              ]
+            },
+            "url": { "raw": "{{baseUrl}}/auth/register", "host": ["{{baseUrl}}"], "path": ["auth", "register"] },
+            "description": "Daftarkan akun UMKM baru. Upload surat keterangan UMKM (opsional)."
+          }
+        },
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.access_token) pm.collectionVariables.set('token', res.access_token);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"adi@umkm.com\",\n  \"password\": \"Password123!\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] },
+            "description": "Login dengan email dan password. Simpan access_token untuk request berikutnya."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Users",
+      "description": "Profil pengguna",
+      "item": [
+        {
+          "name": "Get My Profile",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/users/me", "host": ["{{baseUrl}}"], "path": ["users", "me"] },
+            "description": "Lihat profil user yang sedang login."
+          }
+        },
+        {
+          "name": "Update Profile",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "name", "value": "Adi Wijaya Updated", "type": "text" },
+                { "key": "businessName", "value": "Batik Nusantara Premium", "type": "text" },
+                { "key": "businessType", "value": "Kerajinan Tekstil & Batik", "type": "text" },
+                { "key": "ownerAddress", "value": "Jl. Merdeka No. 15, Jakarta Pusat", "type": "text" },
+                { "key": "businessAddress", "value": "Jl. Industri No. 8, Bandung", "type": "text" },
+                { "key": "nib", "value": "9876543210123456", "type": "text" },
+                { "key": "umkm_certificate", "type": "file", "src": "", "description": "Update surat keterangan UMKM (opsional)" }
+              ]
+            },
+            "url": { "raw": "{{baseUrl}}/users/me", "host": ["{{baseUrl}}"], "path": ["users", "me"] },
+            "description": "Edit profil user. Semua field opsional."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Documents",
+      "description": "Document Assistant – generate dokumen ekspor",
+      "item": [
+        {
+          "name": "Get Document Types",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/documents/types", "host": ["{{baseUrl}}"], "path": ["documents", "types"] },
+            "description": "Daftar semua jenis dokumen ekspor yang tersedia (SVLK, PEB, Certificate of Origin, Commercial Invoice, Packing List, Bill of Lading)."
+          }
+        },
+        {
+          "name": "Get Document Schema – Certificate of Origin",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/documents/schema/CERTIFICATE_OF_ORIGIN", "host": ["{{baseUrl}}"], "path": ["documents", "schema", "CERTIFICATE_OF_ORIGIN"] },
+            "description": "Ambil field header + kolom items untuk dokumen Certificate of Origin."
+          }
+        },
+        {
+          "name": "Get Document Schema – Commercial Invoice",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/documents/schema/COMMERCIAL_INVOICE", "host": ["{{baseUrl}}"], "path": ["documents", "schema", "COMMERCIAL_INVOICE"] }
+          }
+        },
+        {
+          "name": "Get Document Schema – Packing List",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/documents/schema/PACKING_LIST", "host": ["{{baseUrl}}"], "path": ["documents", "schema", "PACKING_LIST"] }
+          }
+        },
+        {
+          "name": "Get Document Schema – Bill of Lading",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/documents/schema/BILL_OF_LADING", "host": ["{{baseUrl}}"], "path": ["documents", "schema", "BILL_OF_LADING"] }
+          }
+        },
+        {
+          "name": "Create Document – Certificate of Origin",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.data && res.data.id) pm.collectionVariables.set('documentId', res.data.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"CERTIFICATE_OF_ORIGIN\",\n  \"fields\": {\n    \"exporterNameAddress\": \"Batik Nusantara, Jl. Industri No. 5, Bandung, Indonesia\",\n    \"exporterTaxId\": \"1234567890123456\",\n    \"blanketPeriodFrom\": \"01/01/26\",\n    \"blanketPeriodTo\": \"31/12/26\",\n    \"producerNameAddress\": \"SAME\",\n    \"importerNameAddress\": \"Tokyo Trading Co. Ltd., 1-1 Shinjuku, Tokyo 160-0022, Japan\",\n    \"certifyingRole\": \"exporter\",\n    \"certifyingCompany\": \"Batik Nusantara\",\n    \"certifyingName\": \"Adi Wijaya\",\n    \"certifyingTitle\": \"Owner\",\n    \"certifyingDate\": \"01/08/26\",\n    \"certifyingTelephone\": \"+62 812 3456 7890\"\n  },\n  \"items\": [\n    {\n      \"goodsDescription\": \"Batik Fabric, Cotton, Handmade\",\n      \"hsCode\": \"520819\",\n      \"countryOfOrigin\": \"Indonesia\"\n    }\n  ]\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/documents", "host": ["{{baseUrl}}"], "path": ["documents"] },
+            "description": "Buat Certificate of Origin. File .docx digenerate dan disimpan di /uploads/documents, path-nya ada di response.data.fileUrl."
+          }
+        },
+        {
+          "name": "Create Document – Commercial Invoice",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"COMMERCIAL_INVOICE\",\n  \"fields\": {\n    \"dateOfExportation\": \"01/08/2026\",\n    \"airwaybillNo\": \"AWB-2024-001\",\n    \"shipperNameAddress\": \"Batik Nusantara, Jl. Industri No. 5, Bandung, Indonesia\",\n    \"consigneeNameAddress\": \"Tokyo Trading Co. Ltd., 1-1 Shinjuku, Tokyo, Japan\",\n    \"importerNameAddress\": \"\",\n    \"countryOfExport\": \"Indonesia\",\n    \"countryOfManufacture\": \"Indonesia\",\n    \"countryOfUltimateDestination\": \"Japan\",\n    \"signatureName\": \"Adi Wijaya, Owner\"\n  },\n  \"items\": [\n    {\n      \"noOfPkgs\": \"1\",\n      \"goodsDescription\": \"Batik Fabric, Cotton, Handmade\",\n      \"qty\": \"200\",\n      \"unitValue\": \"25.00\",\n      \"totalValue\": \"5000.00\"\n    }\n  ]\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/documents", "host": ["{{baseUrl}}"], "path": ["documents"] }
+          }
+        },
+        {
+          "name": "Create Document – Packing List",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"PACKING_LIST\",\n  \"fields\": {\n    \"exporterCompanyAddress\": \"Batik Nusantara, Jl. Industri No. 5, Bandung, Indonesia\",\n    \"exporterTaxId\": \"1234567890123456\",\n    \"exporterContactName\": \"Adi Wijaya\",\n    \"exporterTelephone\": \"+62 812 3456 7890\",\n    \"exporterEmail\": \"adi@umkm.com\",\n    \"exporterCountry\": \"Indonesia\",\n    \"consigneeCompanyAddress\": \"Tokyo Trading Co. Ltd., 1-1 Shinjuku, Tokyo, Japan\",\n    \"consigneeCountry\": \"Japan\",\n    \"shipDate\": \"01/08/2026\",\n    \"invoiceNo\": \"INV-2024-001\",\n    \"packageType\": \"Carton\",\n    \"totalGrossWeight\": \"520 KG\",\n    \"signatureNameTitleDate\": \"Adi Wijaya, Owner, 01/08/2026\"\n  },\n  \"items\": [\n    {\n      \"noOfPackages\": \"20\",\n      \"noOfUnits\": \"200\",\n      \"netWeight\": \"500\",\n      \"unitOfMeasure\": \"KGS\",\n      \"goodsDescription\": \"Batik Fabric, Cotton, Handmade\",\n      \"countryOfManufacture\": \"Indonesia\"\n    }\n  ]\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/documents", "host": ["{{baseUrl}}"], "path": ["documents"] }
+          }
+        },
+        {
+          "name": "Create Document – PEB",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"PEB\",\n  \"fields\": {\n    \"exporterNib\": \"1234567890123456\",\n    \"exporterName\": \"Batik Nusantara\",\n    \"exporterAddress\": \"Jl. Industri No. 5, Bandung\",\n    \"goodsDescription\": \"Batik Fabric, Cotton\",\n    \"hsCode\": \"5208.19\",\n    \"quantity\": \"200 pieces\",\n    \"grossWeight\": \"500\",\n    \"destinationCountry\": \"Japan\",\n    \"portOfExport\": \"Tanjung Priok\",\n    \"exportDate\": \"2024-10-24\"\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/documents", "host": ["{{baseUrl}}"], "path": ["documents"] }
+          }
+        },
+        {
+          "name": "Create Document – Bill of Lading",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"BILL_OF_LADING\",\n  \"fields\": {\n    \"bolDate\": \"01/08/2026\",\n    \"bolNumber\": \"BOL-2026-001\",\n    \"shipFromNameAddress\": \"Batik Nusantara, Jl. Industri No. 5, Bandung, Indonesia\",\n    \"shipToNameAddress\": \"Tokyo Trading Co. Ltd., 1-1 Shinjuku, Tokyo, Japan\",\n    \"carrierName\": \"MV Nusantara Star\",\n    \"sealNumbers\": \"SN-882931\",\n    \"freightChargeTerms\": \"Prepaid\"\n  },\n  \"items\": [\n    {\n      \"packageQty\": \"20\",\n      \"packageType\": \"Carton\",\n      \"weight\": \"500 KG\",\n      \"goodsDescription\": \"Batik Fabric, Cotton, Handmade\"\n    }\n  ]\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/documents", "host": ["{{baseUrl}}"], "path": ["documents"] }
+          }
+        },
+        {
+          "name": "Get My Documents",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/documents", "host": ["{{baseUrl}}"], "path": ["documents"] },
+            "description": "Daftar semua dokumen yang telah dibuat oleh user."
+          }
+        },
+        {
+          "name": "Get Document by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/documents/{{documentId}}", "host": ["{{baseUrl}}"], "path": ["documents", "{{documentId}}"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Matching",
+      "description": "Smart Container Matching berbasis AI",
+      "item": [
+        {
+          "name": "Get Algorithm Info",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/matching/algorithm", "host": ["{{baseUrl}}"], "path": ["matching", "algorithm"] },
+            "description": "Penjelasan algoritma AI W-MCDA/TOPSIS yang digunakan untuk container matching."
+          }
+        },
+        {
+          "name": "Get All Containers (Japan)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/matching/containers", "host": ["{{baseUrl}}"], "path": ["matching", "containers"] },
+            "description": "Lihat semua container yang tersedia ke Jepang beserta kapasitas dan jadwal keberangkatan."
+          }
+        },
+        {
+          "name": "Find Matching Containers",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.data && res.data.length > 0) {",
+                  "  pm.collectionVariables.set('containerId', res.data[0].id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"destinationCountry\": \"Japan\",\n  \"volumeCbm\": 5.0,\n  \"preferredDate\": \"2024-10-20\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/matching/find", "host": ["{{baseUrl}}"], "path": ["matching", "find"] },
+            "description": "Cari container optimal menggunakan algoritma AI W-MCDA. Hasil diurutkan berdasarkan matchScore tertinggi."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Orders",
+      "description": "Checkout, pembayaran, dan riwayat pengiriman",
+      "item": [
+        {
+          "name": "Checkout Preview",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"containerId\": \"{{containerId}}\",\n  \"volumeCbm\": 5.0,\n  \"paymentMethod\": \"bank_transfer\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/orders/checkout/preview", "host": ["{{baseUrl}}"], "path": ["orders", "checkout", "preview"] },
+            "description": "Preview rincian biaya sebelum konfirmasi pembayaran.\n\nPayment methods:\n- bank_transfer: No fee\n- credit_card: +2.9% fee\n- e_wallet: +1.5% fee"
+          }
+        },
+        {
+          "name": "Checkout Preview – Credit Card",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"containerId\": \"{{containerId}}\",\n  \"volumeCbm\": 5.0,\n  \"paymentMethod\": \"credit_card\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/orders/checkout/preview", "host": ["{{baseUrl}}"], "path": ["orders", "checkout", "preview"] }
+          }
+        },
+        {
+          "name": "Confirm & Pay",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.data && res.data.id) pm.collectionVariables.set('orderId', res.data.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"containerId\": \"{{containerId}}\",\n  \"volumeCbm\": 5.0,\n  \"paymentMethod\": \"bank_transfer\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/orders/checkout/confirm", "host": ["{{baseUrl}}"], "path": ["orders", "checkout", "confirm"] },
+            "description": "Konfirmasi pembayaran dan buat order baru. Order ID akan dibuat otomatis dalam format ORD-XXXX."
+          }
+        },
+        {
+          "name": "Get My Orders (Shipments & Payments)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/orders?page=1&limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "10" },
+                { "key": "status", "value": "pending", "disabled": true },
+                { "key": "dateFrom", "value": "2024-01-01", "disabled": true },
+                { "key": "dateTo", "value": "2024-12-31", "disabled": true }
+              ]
+            },
+            "description": "Daftar semua shipment/order milik user dengan pagination. Mendukung filter by status dan tanggal."
+          }
+        },
+        {
+          "name": "Get My Orders – Filter by Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/orders?status=pending&page=1&limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders"],
+              "query": [
+                { "key": "status", "value": "pending" },
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "10" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Order by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/orders/{{orderId}}", "host": ["{{baseUrl}}"], "path": ["orders", "{{orderId}}"] },
+            "description": "Detail satu order berdasarkan UUID."
+          }
+        }
+      ]
+    }
+  ]
+}
