@@ -30,6 +30,12 @@ export class MatchingController {
     return this.matchingService.getAlgorithmInfo();
   }
 
+  @Get('origin-ports')
+  @ApiOperation({ summary: 'Jarak nyata dari Jepara ke Tanjung Emas & Tanjung Perak, dan rekomendasi terdekat' })
+  getOriginPortsInfo() {
+    return this.matchingService.getOriginPortsInfo();
+  }
+
   @Get('containers')
   @ApiOperation({ summary: 'Lihat semua container yang tersedia ke Jepang' })
   @ApiQuery({ name: 'forCbm', required: false, example: 5 })

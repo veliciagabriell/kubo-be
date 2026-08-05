@@ -30,6 +30,7 @@ async function bootstrap() {
     .addTag('Auth', 'Registrasi dan Login')
     .addTag('Users', 'Profil pengguna')
     .addTag('Documents', 'Document Assistant – generate dokumen ekspor')
+    .addTag('Vessels', 'Pelacakan kapal live via AIS (AISstream.io) – Indonesia → Jepang')
     .addTag('Matching', 'Smart Container Matching berbasis AI')
     .addTag('Orders', 'Checkout, pembayaran, dan riwayat pengiriman')
     .addTag('Shipments', 'Data pengiriman ekspor UMKM')

@@ -16,7 +16,7 @@ import { CreateOrderDto, OrderListQueryDto } from './dto/create-order.dto';
 
 const SUBSCRIPTION_FEE = 19000;
 const PLATFORM_FEE_PER_CBM = 500;
-const DOCUMENT_ASSISTANCE_FEE = 100000;
+const DOCUMENT_ASSISTANCE_FEE = 0;
 const PAYMENT_FEES: Record<PaymentMethod, number> = {
   [PaymentMethod.BANK_TRANSFER]: 0,
   [PaymentMethod.CREDIT_CARD]: 0.029,
