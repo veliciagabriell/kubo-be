@@ -40,21 +40,51 @@ export class DocumentParserService {
     fileName: string,
     mimeType: string,
   ): Promise<ParsedDocument> {
-    const response = await fetch(`${endpoint.replace(/\/$/, '')}/parse`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        file_name: fileName,
-        mime_type: mimeType,
-        content_base64: buffer.toString('base64'),
-      }),
-    });
-    if (!response.ok) {
+    const timeoutMs = Number(
+      this.config.get<string>('DOCUMENT_INTELLIGENCE_TIMEOUT_MS') ?? 300_000,
+    );
+    let response: Response;
+    try {
+      response = await fetch(`${endpoint.replace(/\/$/, '')}/parse`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          file_name: fileName,
+          mime_type: mimeType,
+          content_base64: buffer.toString('base64'),
+        }),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+    } catch (error) {
+      const reason =
+        error instanceof Error && error.name === 'TimeoutError'
+          ? `timeout setelah ${timeoutMs} ms`
+          : error instanceof Error
+            ? error.message
+            : 'network error';
       throw new ServiceUnavailableException(
-        `Document parser gagal (${response.status})`,
+        `Document parser tidak dapat dihubungi di ${endpoint}: ${reason}`,
       );
     }
-    const result = (await response.json()) as RemoteParseResponse;
+    if (!response.ok) {
+      const detail = (await response.text()).slice(0, 500);
+      throw new ServiceUnavailableException(
+        `Document parser gagal (${response.status})${detail ? `: ${detail}` : ''}`,
+      );
+    }
+    let result: RemoteParseResponse;
+    try {
+      result = (await response.json()) as RemoteParseResponse;
+    } catch {
+      throw new ServiceUnavailableException(
+        'Document parser mengembalikan respons non-JSON. Periksa DOCUMENT_INTELLIGENCE_URL.',
+      );
+    }
+    if (typeof result.text !== 'string') {
+      throw new ServiceUnavailableException(
+        'Document parser mengembalikan payload tanpa field text.',
+      );
+    }
     const blocks = (result.blocks ?? []).map((block) => ({
       text: block.text,
       pageNumber: block.page ?? null,

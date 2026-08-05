@@ -2,12 +2,13 @@ import {
   BadRequestException,
   Injectable,
   NotFoundException,
+  OnModuleInit,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { createHash, randomUUID } from 'crypto';
 import { mkdir, readFile, writeFile } from 'fs/promises';
 import { extname, join } from 'path';
-import { Repository } from 'typeorm';
+import { FindOptionsWhere, Repository } from 'typeorm';
 import { Shipment } from '../shipments/entities/shipment.entity';
 import { CorrectExtractedFieldDto } from './dto/correct-extracted-field.dto';
 import { UploadDocumentDto } from './dto/upload-document.dto';
@@ -20,6 +21,7 @@ import { ExtractedField } from './entities/extracted-field.entity';
 import { ShipmentFact } from './entities/shipment-fact.entity';
 import { DocumentExtractorService } from './document-extractor.service';
 import { DocumentParserService } from './document-parser.service';
+import { DocumentProcessingQueueService } from './document-processing-queue.service';
 
 const MAX_FILE_SIZE = 25 * 1024 * 1024;
 const SUPPORTED_EXTENSIONS = new Set([
@@ -35,7 +37,7 @@ const SUPPORTED_EXTENSIONS = new Set([
 ]);
 
 @Injectable()
-export class DocumentIntelligenceService {
+export class DocumentIntelligenceService implements OnModuleInit {
   constructor(
     @InjectRepository(Document)
     private readonly documentRepo: Repository<Document>,
@@ -47,7 +49,14 @@ export class DocumentIntelligenceService {
     private readonly shipmentRepo: Repository<Shipment>,
     private readonly parser: DocumentParserService,
     private readonly extractor: DocumentExtractorService,
+    private readonly processingQueue: DocumentProcessingQueueService,
   ) {}
+
+  onModuleInit(): void {
+    this.processingQueue.registerProcessor((documentId) =>
+      this.process(documentId),
+    );
+  }
 
   async upload(
     userId: string,
@@ -56,9 +65,7 @@ export class DocumentIntelligenceService {
     dto: UploadDocumentDto,
   ) {
     if (!file) throw new BadRequestException('File wajib diunggah');
-    const shipment = await this.shipmentRepo.findOne({
-      where: { id: shipmentId, userId },
-    });
+    const shipment = await this.findOwnedShipment(shipmentId, userId);
     if (!shipment) throw new NotFoundException('Shipment not found');
 
     const inspection = this.inspect(file);
@@ -67,7 +74,7 @@ export class DocumentIntelligenceService {
     }
     const hash = createHash('sha256').update(file.buffer).digest('hex');
     const duplicate = await this.documentRepo.findOne({
-      where: { userId, shipmentId, sha256: hash },
+      where: { userId, shipmentId: shipment.id, sha256: hash },
       order: { createdAt: 'ASC' },
     });
     if (duplicate) {
@@ -88,7 +95,7 @@ export class DocumentIntelligenceService {
     const document = await this.documentRepo.save(
       this.documentRepo.create({
         userId,
-        shipmentId,
+        shipmentId: shipment.id,
         type: dto.declaredDocumentType ?? null,
         declaredDocumentType: dto.declaredDocumentType ?? null,
         fields: '{}',
@@ -106,7 +113,7 @@ export class DocumentIntelligenceService {
       }),
     );
 
-    setImmediate(() => void this.process(document.id));
+    await this.processingQueue.enqueue(document.id);
     return { ...this.toDocumentResult(document), idempotentReplay: false };
   }
 
@@ -188,6 +195,7 @@ export class DocumentIntelligenceService {
       document.errorMessage =
         error instanceof Error ? error.message : 'Unknown processing error';
       await this.documentRepo.save(document);
+      throw error;
     }
   }
 
@@ -215,7 +223,7 @@ export class DocumentIntelligenceService {
     document.status = ProcessingStatus.QUEUED;
     document.errorMessage = null;
     await this.documentRepo.save(document);
-    setImmediate(() => void this.process(document.id));
+    await this.processingQueue.enqueue(document.id);
     return this.toDocumentResult(document);
   }
 
@@ -250,12 +258,10 @@ export class DocumentIntelligenceService {
   }
 
   async getShipmentFacts(shipmentId: string, userId: string) {
-    const shipment = await this.shipmentRepo.findOne({
-      where: { id: shipmentId, userId },
-    });
+    const shipment = await this.findOwnedShipment(shipmentId, userId);
     if (!shipment) throw new NotFoundException('Shipment not found');
     return this.factRepo.find({
-      where: { shipmentId, userId },
+      where: { shipmentId: shipment.id, userId },
       order: { field: 'ASC' },
     });
   }
@@ -294,6 +300,15 @@ export class DocumentIntelligenceService {
     const document = await this.documentRepo.findOne({ where: { id, userId } });
     if (!document) throw new NotFoundException('Document not found');
     return document;
+  }
+
+  private findOwnedShipment(shipmentId: string, userId: string) {
+    const byId: FindOptionsWhere<Shipment> = { id: shipmentId, userId };
+    const byCode: FindOptionsWhere<Shipment> = {
+      shipmentCode: shipmentId,
+      userId,
+    };
+    return this.shipmentRepo.findOne({ where: [byId, byCode] });
   }
 
   private async upsertFact(

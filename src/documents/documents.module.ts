@@ -12,6 +12,7 @@ import { Shipment } from '../shipments/entities/shipment.entity';
 import { DocumentIntelligenceService } from './document-intelligence.service';
 import { DocumentParserService } from './document-parser.service';
 import { DocumentExtractorService } from './document-extractor.service';
+import { DocumentProcessingQueueService } from './document-processing-queue.service';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { DocumentExtractorService } from './document-extractor.service';
     DocumentIntelligenceService,
     DocumentParserService,
     DocumentExtractorService,
+    DocumentProcessingQueueService,
   ],
   exports: [DocumentIntelligenceService],
 })

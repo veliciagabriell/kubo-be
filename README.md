@@ -101,10 +101,87 @@ Tanpa adapter, CSV dan PDF digital sederhana memiliki fallback lokal. PDF scan, 
 DOCX, dan XLSX akan berstatus `failed` dengan pesan konfigurasi yang dapat ditindaklanjuti;
 setelah adapter tersedia, endpoint `reprocess` dapat digunakan tanpa upload ulang.
 
-Untuk production, ganti pemanggilan `setImmediate` pada queue adapter dengan worker
-durable (BullMQ/Celery) agar job dapat retry dan bertahan saat process restart. Kontrak
-status dan processor sengaja dipisahkan dari HTTP sehingga pergantian queue tidak
-mengubah API.
+Job diproses oleh BullMQ apabila `REDIS_URL` tersedia (3 percobaan dengan exponential
+backoff). Tanpa Redis, development lokal tetap dapat berjalan dengan fallback in-process,
+tetapi job tersebut tidak bertahan apabila process API restart.
+
+## Menjalankan development stack
+
+### Opsi 1 — semua service dengan Docker (disarankan)
+
+Pastikan Docker Desktop sudah aktif, lalu dari root repository:
+
+```powershell
+Copy-Item .env.example .env
+docker compose -f infrastructure/docker-compose.yml up -d --build
+docker compose -f infrastructure/docker-compose.yml ps
+```
+
+Service yang tersedia:
+
+| Service     | URL                              | Fungsi                                |
+| ----------- | -------------------------------- | ------------------------------------- |
+| KUBO API    | `http://localhost:3001/api/v1`   | API utama, ekstraksi, canonical facts |
+| Swagger     | `http://localhost:3001/api/docs` | Dokumentasi API                       |
+| Document AI | `http://localhost:8000`          | Docling parsing, OCR, layout, tabel   |
+| Redis       | internal `redis:6379`            | Durable document job queue            |
+
+Model Docling diunduh saat build/pemakaian pertama dan disimpan dalam Docker volume,
+sehingga startup pertama lebih lama daripada startup berikutnya. Periksa health:
+
+```powershell
+curl.exe http://localhost:3001/api/v1/health
+curl.exe http://localhost:8000/health
+```
+
+Hentikan container tanpa menghapus database/upload volume:
+
+```powershell
+docker compose -f infrastructure/docker-compose.yml down
+```
+
+Jangan menambahkan opsi `-v` kecuali memang ingin menghapus data development di volume.
+Frontend tetap dijalankan terpisah:
+
+```powershell
+Set-Location C:\kubo-fe
+npm run dev
+```
+
+Atur `VITE_API_BASE_URL=http://localhost:3001/api/v1` pada environment frontend.
+Database Docker memakai volume `kubo-data` yang terpisah dari `C:\kubo-be\kubo.db`;
+gunakan Opsi 2 jika ingin tetap memakai database host yang sudah ada.
+
+### Opsi 2 — API di host, infrastructure di Docker
+
+Jalankan Redis dan Document AI saja:
+
+```powershell
+docker compose -f infrastructure/docker-compose.yml up -d --build redis document-ai-service
+Copy-Item .env.example .env
+npm install
+npm run start:dev
+```
+
+Untuk mode ini, `.env` menggunakan `DOCUMENT_INTELLIGENCE_URL=http://localhost:8000`
+dan `REDIS_URL=redis://localhost:6379/0`. Frontend `C:\kubo-fe` harus memakai base URL
+`http://localhost:3001/api/v1`; respons HTML seperti `<!DOCTYPE ...>` menandakan request
+masuk ke dev server frontend atau URL route yang salah, bukan ke JSON API KUBO.
+
+### Opsi 3 — tanpa Docker
+
+API tetap dapat dijalankan dengan `npm run start:dev`. CSV dan sebagian PDF digital
+memakai fallback parser, sedangkan image, PDF scan, DOCX, dan XLSX memerlukan service
+Document AI. Tanpa Redis, queue otomatis memakai fallback in-process.
+
+## Batas tanggung jawab AI
+
+- `services/document-ai-service`: inspeksi isi, OCR, layout/table parsing, serta block
+  provenance. Service ini stateless dan tidak mengakses database KUBO.
+- `src/documents`: autentikasi/ownership, idempotensi, klasifikasi, field extraction,
+  koreksi pengguna, dan penyimpanan `shipment_facts` untuk reuse lintas dokumen.
+- Gemini/Claude pada `src/matching` tetap khusus container matching. Dokumen tidak
+  dikirim ke provider LLM eksternal oleh baseline ini.
 
 ## Description
 

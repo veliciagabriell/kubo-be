@@ -1,0 +1,1 @@
+"""KUBO document AI service."""

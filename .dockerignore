@@ -1,0 +1,10 @@
+.git
+.github
+.env
+node_modules
+dist
+coverage
+kubo.db
+uploads
+ref
+*.log
