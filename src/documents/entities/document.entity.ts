@@ -37,6 +37,12 @@ export enum FileInspectionStatus {
   DUPLICATE = 'duplicate',
 }
 
+export enum DocumentOrigin {
+  UPLOADED = 'uploaded',
+  GENERATED = 'generated',
+  EXTERNAL = 'external',
+}
+
 @Entity('documents')
 export class Document {
   @PrimaryGeneratedColumn('uuid')
@@ -64,8 +70,33 @@ export class Document {
   @Column({ name: 'generated_content', type: 'text', nullable: true })
   generatedContent: string | null;
 
+  @Column({
+    name: 'document_origin',
+    type: 'varchar',
+    default: DocumentOrigin.UPLOADED,
+  })
+  documentOrigin: DocumentOrigin;
+
+  @Column({ name: 'template_version', type: 'varchar', nullable: true })
+  templateVersion: string | null;
+
+  @Column({ name: 'shipment_snapshot_id', type: 'varchar', nullable: true })
+  shipmentSnapshotId: string | null;
+
+  @Column({ name: 'generated_at', type: 'datetime', nullable: true })
+  generatedAt: Date | null;
+
+  @Column({ name: 'generated_by', type: 'varchar', nullable: true })
+  generatedBy: string | null;
+
+  @Column({ name: 'generated_sources', type: 'text', nullable: true })
+  generatedSources: string | null;
+
   @Column({ name: 'file_url', type: 'varchar', nullable: true })
   fileUrl: string | null;
+
+  @Column({ name: 'docx_file_url', type: 'varchar', nullable: true })
+  docxFileUrl: string | null;
 
   @Column({ default: 'draft' })
   status: string;

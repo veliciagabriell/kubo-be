@@ -1,4 +1,9 @@
-import { Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  OnModuleInit,
+} from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
@@ -36,6 +41,7 @@ export interface CostBreakdownView {
 
 export interface ContainerVesselView {
   mmsi: string;
+  dataSource: 'live_ais' | 'development_fixture';
   imo: string | null;
   name: string | null;
   shipTypeLabel: string | null;
@@ -111,9 +117,14 @@ const FREIGHT_RATE_IDR_PER_CBM_PER_KM = 150;
 const REFERENCE_USD_TO_IDR = 16_000;
 const INDUSTRY_LCL_RANGE_USD_PER_CBM = { min: 40, max: 180 };
 
-function estimateFreightCost(originPortId: string, destinationPortId: string | null) {
+function estimateFreightCost(
+  originPortId: string,
+  destinationPortId: string | null,
+) {
   const origin = getPortZone(originPortId);
-  const destination = destinationPortId ? getPortZone(destinationPortId) : undefined;
+  const destination = destinationPortId
+    ? getPortZone(destinationPortId)
+    : undefined;
   if (!origin || !destination) {
     return {
       costPerCbm: FREIGHT_BASE_RATE_IDR_PER_CBM,
@@ -125,7 +136,8 @@ function estimateFreightCost(originPortId: string, destinationPortId: string | n
   }
   const distanceKm = Math.round(haversineKm(origin.center, destination.center));
   const costPerCbm = Math.round(
-    FREIGHT_BASE_RATE_IDR_PER_CBM + FREIGHT_RATE_IDR_PER_CBM_PER_KM * distanceKm,
+    FREIGHT_BASE_RATE_IDR_PER_CBM +
+      FREIGHT_RATE_IDR_PER_CBM_PER_KM * distanceKm,
   );
   const costPerCbmUsd = Math.round(costPerCbm / REFERENCE_USD_TO_IDR);
   return {
@@ -171,14 +183,26 @@ export class MatchingService implements OnModuleInit {
    */
   async onModuleInit() {
     const openVoyages = await this.voyageRepo.find({
-      where: [{ status: VoyageStatus.INBOUND }, { status: VoyageStatus.AWAITING_DEPARTURE }],
+      where: [
+        { status: VoyageStatus.INBOUND },
+        { status: VoyageStatus.AWAITING_DEPARTURE },
+      ],
     });
     let synced = 0;
     for (const voyage of openVoyages) {
-      const existing = await this.containerRepo.findOneBy({ voyageId: voyage.id });
+      const existing = await this.containerRepo.findOneBy({
+        voyageId: voyage.id,
+      });
       if (existing) continue;
-      const vessel = await this.vesselRepo.findOneBy({ mmsi: voyage.vesselMmsi });
-      if (!isLargeCargoVessel({ shipTypeCode: vessel?.shipTypeCode ?? null, lengthM: vessel?.lengthM ?? null })) {
+      const vessel = await this.vesselRepo.findOneBy({
+        mmsi: voyage.vesselMmsi,
+      });
+      if (
+        !isLargeCargoVessel({
+          shipTypeCode: vessel?.shipTypeCode ?? null,
+          lengthM: vessel?.lengthM ?? null,
+        })
+      ) {
         continue;
       }
       if (voyage.status === VoyageStatus.INBOUND) {
@@ -189,7 +213,9 @@ export class MatchingService implements OnModuleInit {
       synced++;
     }
     if (synced) {
-      this.logger.log(`Reconciled ${synced} already-open voyage(s) into containers on startup`);
+      this.logger.log(
+        `Reconciled ${synced} already-open voyage(s) into containers on startup`,
+      );
     }
   }
 
@@ -254,7 +280,8 @@ export class MatchingService implements OnModuleInit {
         ((c.currentUsedCbm + dto.volumeCbm) / c.totalCapacityCbm) * 100,
       );
       const daysFromPreferredDate = Math.round(
-        (new Date(c.departureDate).getTime() - preferredDate.getTime()) / (1000 * 60 * 60 * 24),
+        (new Date(c.departureDate).getTime() - preferredDate.getTime()) /
+          (1000 * 60 * 60 * 24),
       );
 
       scored.push({
@@ -264,9 +291,15 @@ export class MatchingService implements OnModuleInit {
         daysFromPreferredDate,
         matchScore: parseFloat(matchScore.toFixed(4)),
         scoreBreakdown: {
-          utilizationScore: parseFloat(scoreBreakdown.utilizationScore.toFixed(4)),
-          dateProximityScore: parseFloat(scoreBreakdown.dateProximityScore.toFixed(4)),
-          collaborationScore: parseFloat(scoreBreakdown.collaborationScore.toFixed(4)),
+          utilizationScore: parseFloat(
+            scoreBreakdown.utilizationScore.toFixed(4),
+          ),
+          dateProximityScore: parseFloat(
+            scoreBreakdown.dateProximityScore.toFixed(4),
+          ),
+          collaborationScore: parseFloat(
+            scoreBreakdown.collaborationScore.toFixed(4),
+          ),
           fitRatioScore: parseFloat(scoreBreakdown.fitRatioScore.toFixed(4)),
         },
         aiScore: null,
@@ -327,7 +360,10 @@ export class MatchingService implements OnModuleInit {
    * compatibility score into finalScore. No-ops (leaves MCDA-only
    * finalScore) if the AI layer is disabled or the call fails.
    */
-  private async applyAiReranking(scored: ScoredContainer[], dto: MatchRequestDto) {
+  private async applyAiReranking(
+    scored: ScoredContainer[],
+    dto: MatchRequestDto,
+  ) {
     if (!this.aiMatchingService.enabled || scored.length === 0) return;
     const topCandidates = scored.slice(0, AI_RERANK_TOP_N);
     const aiCandidates: AiMatchCandidate[] = topCandidates.map((c) => ({
@@ -351,7 +387,8 @@ export class MatchingService implements OnModuleInit {
       // AI was enabled but the call failed (e.g. quota, transient error) - be
       // explicit that this is a real failure, not "AI never configured".
       for (const c of topCandidates) {
-        c.finalScoreJustification = 'Skor MCDA murni (panggilan API AI gagal saat permintaan ini - fallback otomatis, lihat log server).';
+        c.finalScoreJustification =
+          'Skor MCDA murni (panggilan API AI gagal saat permintaan ini - fallback otomatis, lihat log server).';
       }
       return;
     }
@@ -363,9 +400,15 @@ export class MatchingService implements OnModuleInit {
       c.aiScore = aiResult.aiScore;
       c.aiRationale = aiResult.rationale;
       c.finalScore = parseFloat(
-        ((1 - AI_BLEND_WEIGHT) * c.matchScore + AI_BLEND_WEIGHT * aiResult.aiScore).toFixed(4),
+        (
+          (1 - AI_BLEND_WEIGHT) * c.matchScore +
+          AI_BLEND_WEIGHT * aiResult.aiScore
+        ).toFixed(4),
       );
-      const providerLabel = this.aiMatchingService.activeProvider === 'gemini' ? 'Google Gemini' : 'Claude';
+      const providerLabel =
+        this.aiMatchingService.activeProvider === 'gemini'
+          ? 'Google Gemini'
+          : 'Claude';
       c.finalScoreJustification =
         `Blend: ${((1 - AI_BLEND_WEIGHT) * 100).toFixed(0)}% skor MCDA (${c.matchScore.toFixed(4)}) + ` +
         `${(AI_BLEND_WEIGHT * 100).toFixed(0)}% skor kompatibilitas AI ${providerLabel} (${aiResult.aiScore.toFixed(4)}).`;
@@ -408,7 +451,19 @@ export class MatchingService implements OnModuleInit {
 
   async getAlgorithmInfo() {
     const provider = this.aiMatchingService.activeProvider;
-    const providerLabel = provider === 'gemini' ? 'Google Gemini (gratis)' : provider === 'claude' ? 'Claude' : 'tidak aktif';
+    const fixtureEnabled =
+      ['1', 'true', 'yes', 'on'].includes(
+        (process.env.MATCHING_FIXTURE_ENABLED ?? '').trim().toLowerCase(),
+      ) &&
+      ['development', 'test'].includes(
+        (process.env.APP_ENV ?? '').trim().toLowerCase(),
+      );
+    const providerLabel =
+      provider === 'gemini'
+        ? 'Google Gemini (gratis)'
+        : provider === 'claude'
+          ? 'Claude'
+          : 'tidak aktif';
     return {
       name: 'KUBO Smart Container Matching',
       method:
@@ -431,11 +486,19 @@ export class MatchingService implements OnModuleInit {
         fallback:
           'Jika tidak ada API key AI yang diset, atau panggilan API gagal, sistem otomatis kembali ke skor MCDA murni (graceful degrade).',
       },
+      developmentFixture: {
+        enabled: fixtureEnabled,
+        dataSource: 'development_fixture',
+        warning: fixtureEnabled
+          ? 'Mode development aktif; kandidat berlabel development_fixture bukan data AIS live.'
+          : null,
+      },
       description:
         'Menggabungkan 4 kriteria penilaian MCDA untuk menemukan container paling optimal bagi ' +
         `muatan UMKM, lalu 5 kandidat teratas dinilai ulang oleh AI (${providerLabel}) untuk kecocokan kualitatif. ` +
-        'Container hanya muncul setelah kapal aslinya benar-benar terdeteksi berangkat dari Tanjung ' +
-        'Emas/Tanjung Perak via AIS live (AISstream.io) - tidak ada data seed.',
+        (fixtureEnabled
+          ? 'Mode development fixture sedang aktif agar alur dapat diuji saat AISstream bermasalah; periksa dataSource pada setiap kandidat.'
+          : 'Container hanya muncul setelah kapal aslinya terdeteksi via AIS live (AISstream.io).'),
       criteria: [
         {
           name: 'Utilization Score',
@@ -443,7 +506,8 @@ export class MatchingService implements OnModuleInit {
           description:
             'Seberapa optimal penggunaan container setelah ditambah volume user. Target 85% kapasitas.',
           formula: 'max(0, 1 - |utilization_baru - 0.85| / 0.85)',
-          dataSource: 'currentUsedCbm: booking nyata (Orders); totalCapacityCbm: konstanta ISO container',
+          dataSource:
+            'currentUsedCbm: booking nyata (Orders); totalCapacityCbm: konstanta ISO container',
         },
         {
           name: 'Date Proximity Score',
@@ -451,7 +515,8 @@ export class MatchingService implements OnModuleInit {
           description:
             'Kedekatan tanggal keberangkatan dengan preferensi user (window 30 hari).',
           formula: 'max(0, 1 - |selisih_hari| / 30)',
-          dataSource: 'departureDate: waktu keberangkatan nyata kapal, dikonfirmasi via AIS',
+          dataSource:
+            'departureDate: waktu keberangkatan nyata kapal, dikonfirmasi via AIS',
         },
         {
           name: 'Collaboration Score',
@@ -467,12 +532,16 @@ export class MatchingService implements OnModuleInit {
           description:
             'Seberapa pas volume muatan user mengisi sisa ruang yang tersedia.',
           formula: 'min(1, requested_cbm / available_cbm)',
-          dataSource: 'available_cbm: totalCapacityCbm - currentUsedCbm (keduanya nyata)',
+          dataSource:
+            'available_cbm: totalCapacityCbm - currentUsedCbm (keduanya nyata)',
         },
       ],
       finalFormula: 'MCDA Score = 0.40×U + 0.35×D + 0.15×C + 0.10×F',
       scoreRange: '[0, 1] – semakin mendekati 1 semakin optimal',
       dataProvenanceNote:
+        (fixtureEnabled
+          ? 'Fixture development selalu ditandai dataSource=development_fixture dan tidak boleh diperlakukan sebagai data AIS. '
+          : '') +
         'Field yang bersifat estimasi (bukan data AIS/DB langsung) selalu disertai field ' +
         '*Justification yang menjelaskan formula dan input aslinya - lihat costs.freight ' +
         '(freightEstimateJustification), vessel.estimatedTeu (capacityEstimateJustification), ' +
@@ -494,7 +563,13 @@ export class MatchingService implements OnModuleInit {
     const taxes = 0;
     const subscription = 0;
     const total =
-      freight + platformFee + documentAssistance + handling + insurance + taxes + subscription;
+      freight +
+      platformFee +
+      documentAssistance +
+      handling +
+      insurance +
+      taxes +
+      subscription;
     return {
       freight,
       platformFee,
@@ -519,20 +594,29 @@ export class MatchingService implements OnModuleInit {
     };
   }
 
-  private async toMatchView(container: Container, cbmForCost: number): Promise<ContainerMatchView> {
+  private async toMatchView(
+    container: Container,
+    cbmForCost: number,
+  ): Promise<ContainerMatchView> {
     const occupancy = Math.round(
       (container.currentUsedCbm / container.totalCapacityCbm) * 100,
     );
     const remainingCbm = parseFloat(
       (container.totalCapacityCbm - container.currentUsedCbm).toFixed(2),
     );
-    const vessel = await this.vesselRepo.findOneBy({ mmsi: container.vesselMmsi });
+    const vessel = await this.vesselRepo.findOneBy({
+      mmsi: container.vesselMmsi,
+    });
     const jeparaDistance = distanceFromJeparaToPortLabel(container.originPort);
 
     // Real-time ETA: only meaningful before real arrival (status !== 'closed'),
     // and only when we have both a real current position and a resolved JP destination.
     let eta: EtaEstimate | null = null;
-    if (container.status !== 'closed' && vessel?.lastLat != null && vessel?.lastLon != null) {
+    if (
+      container.status !== 'closed' &&
+      vessel?.lastLat != null &&
+      vessel?.lastLon != null
+    ) {
       eta = estimateEtaToPort(
         { lat: vessel.lastLat, lon: vessel.lastLon },
         container.destinationCity,
@@ -551,7 +635,8 @@ export class MatchingService implements OnModuleInit {
     // shown "ready today" for a ship that may still be days away and giving
     // them no real lead time to get cargo to the dock.
     let estimatedDeparture = container.departureDate;
-    let departureEstimateJustification = container.departureEstimateJustification;
+    let departureEstimateJustification =
+      container.departureEstimateJustification;
     if (
       !container.departureConfirmed &&
       container.originPortId &&
@@ -592,6 +677,7 @@ export class MatchingService implements OnModuleInit {
       vessel: vessel
         ? {
             mmsi: vessel.mmsi,
+            dataSource: vessel.dataSource,
             imo: vessel.imo,
             name: vessel.name,
             shipTypeLabel: vessel.shipTypeLabel,
@@ -655,7 +741,10 @@ export class MatchingService implements OnModuleInit {
       await this.syncArrivedAtOrigin(voyage);
     } else if (voyage.status === VoyageStatus.DEPARTED) {
       await this.syncDepartedVoyage(voyage);
-    } else if (voyage.status === VoyageStatus.ARRIVED || voyage.status === VoyageStatus.STALE) {
+    } else if (
+      voyage.status === VoyageStatus.ARRIVED ||
+      voyage.status === VoyageStatus.STALE
+    ) {
       await this.closeVoyageContainer(voyage);
     }
   }
@@ -672,7 +761,13 @@ export class MatchingService implements OnModuleInit {
   @OnEvent('vessel.staticDataUpdated')
   async handleVesselStaticDataUpdated(payload: { vessel: Vessel }) {
     const { vessel } = payload;
-    if (!isLargeCargoVessel({ shipTypeCode: vessel.shipTypeCode, lengthM: vessel.lengthM })) return;
+    if (
+      !isLargeCargoVessel({
+        shipTypeCode: vessel.shipTypeCode,
+        lengthM: vessel.lengthM,
+      })
+    )
+      return;
     const openVoyage = await this.voyageRepo.findOneBy({
       vesselMmsi: vessel.mmsi,
       status: VoyageStatus.AWAITING_DEPARTURE,
@@ -692,23 +787,38 @@ export class MatchingService implements OnModuleInit {
    */
   private async syncAwaitingVoyage(voyage: Voyage) {
     const vessel = await this.vesselRepo.findOneBy({ mmsi: voyage.vesselMmsi });
-    if (!isLargeCargoVessel({ shipTypeCode: vessel?.shipTypeCode ?? null, lengthM: vessel?.lengthM ?? null })) {
+    if (
+      !isLargeCargoVessel({
+        shipTypeCode: vessel?.shipTypeCode ?? null,
+        lengthM: vessel?.lengthM ?? null,
+      })
+    ) {
       return;
     }
-    const existing = await this.containerRepo.findOneBy({ voyageId: voyage.id });
+    const existing = await this.containerRepo.findOneBy({
+      voyageId: voyage.id,
+    });
     if (existing) return; // already tracked (e.g. re-entered the zone)
 
     const estimatedDeparture = new Date().toISOString().slice(0, 10);
     const { cargo, document } = this.cutoffs(estimatedDeparture);
-    const guessedDestination = guessJapanZoneFromText(vessel?.lastDestinationRaw);
-    const freight = estimateFreightCost(voyage.originPortId, guessedDestination?.id ?? null);
+    const guessedDestination = guessJapanZoneFromText(
+      vessel?.lastDestinationRaw,
+    );
+    const freight = estimateFreightCost(
+      voyage.originPortId,
+      guessedDestination?.id ?? null,
+    );
 
     const container = this.containerRepo.create({
       voyageId: voyage.id,
       vesselMmsi: voyage.vesselMmsi,
       destinationCountry: 'Japan',
-      destinationCity: guessedDestination?.label ?? 'Menunggu konfirmasi tujuan',
-      destinationConfidence: guessedDestination ? 'guessed_from_ais_text' : null,
+      destinationCity:
+        guessedDestination?.label ?? 'Menunggu konfirmasi tujuan',
+      destinationConfidence: guessedDestination
+        ? 'guessed_from_ais_text'
+        : null,
       originPort: voyage.originPortLabel,
       originPortId: voyage.originPortId,
       containerType: ContainerType.FORTY_FT,
@@ -744,11 +854,21 @@ export class MatchingService implements OnModuleInit {
    * toMatchView) so the date keeps tightening as the vessel gets closer.
    */
   private async syncInboundVoyage(voyage: Voyage, vesselHint?: Vessel) {
-    const vessel = vesselHint ?? (await this.vesselRepo.findOneBy({ mmsi: voyage.vesselMmsi }));
-    if (!vessel || !isLargeCargoVessel({ shipTypeCode: vessel.shipTypeCode, lengthM: vessel.lengthM })) {
+    const vessel =
+      vesselHint ??
+      (await this.vesselRepo.findOneBy({ mmsi: voyage.vesselMmsi }));
+    if (
+      !vessel ||
+      !isLargeCargoVessel({
+        shipTypeCode: vessel.shipTypeCode,
+        lengthM: vessel.lengthM,
+      })
+    ) {
       return;
     }
-    const existing = await this.containerRepo.findOneBy({ voyageId: voyage.id });
+    const existing = await this.containerRepo.findOneBy({
+      voyageId: voyage.id,
+    });
     if (existing) return;
     if (vessel.lastLat == null || vessel.lastLon == null) return;
 
@@ -801,10 +921,17 @@ export class MatchingService implements OnModuleInit {
    */
   private async syncArrivedAtOrigin(voyage: Voyage) {
     const vessel = await this.vesselRepo.findOneBy({ mmsi: voyage.vesselMmsi });
-    if (!isLargeCargoVessel({ shipTypeCode: vessel?.shipTypeCode ?? null, lengthM: vessel?.lengthM ?? null })) {
+    if (
+      !isLargeCargoVessel({
+        shipTypeCode: vessel?.shipTypeCode ?? null,
+        lengthM: vessel?.lengthM ?? null,
+      })
+    ) {
       return;
     }
-    const container = await this.containerRepo.findOneBy({ voyageId: voyage.id });
+    const container = await this.containerRepo.findOneBy({
+      voyageId: voyage.id,
+    });
     if (!container) {
       // Shouldn't normally happen (the INBOUND stage should have created one), but don't leave a real arrival untracked.
       await this.syncAwaitingVoyage(voyage);
@@ -833,14 +960,23 @@ export class MatchingService implements OnModuleInit {
     // see isLargeCargoVessel / VESSEL_FILTER_JUSTIFICATION. If the vessel's
     // type/dimensions aren't known yet, we skip rather than guess.
     const vessel = await this.vesselRepo.findOneBy({ mmsi: voyage.vesselMmsi });
-    if (!isLargeCargoVessel({ shipTypeCode: vessel?.shipTypeCode ?? null, lengthM: vessel?.lengthM ?? null })) {
+    if (
+      !isLargeCargoVessel({
+        shipTypeCode: vessel?.shipTypeCode ?? null,
+        lengthM: vessel?.lengthM ?? null,
+      })
+    ) {
       return;
     }
 
     const departureDate = voyage.departedAt.toISOString().slice(0, 10);
     const { cargo, document } = this.cutoffs(departureDate);
-    const freight = estimateFreightCost(voyage.originPortId, voyage.destinationPortId);
-    const destinationCity = voyage.destinationPortLabel ?? 'Menunggu konfirmasi tujuan';
+    const freight = estimateFreightCost(
+      voyage.originPortId,
+      voyage.destinationPortId,
+    );
+    const destinationCity =
+      voyage.destinationPortLabel ?? 'Menunggu konfirmasi tujuan';
 
     let container = await this.containerRepo.findOneBy({ voyageId: voyage.id });
     if (!container) {
@@ -870,16 +1006,23 @@ export class MatchingService implements OnModuleInit {
   }
 
   private async closeVoyageContainer(voyage: Voyage) {
-    const container = await this.containerRepo.findOneBy({ voyageId: voyage.id });
+    const container = await this.containerRepo.findOneBy({
+      voyageId: voyage.id,
+    });
     if (!container) return;
     container.status = 'closed';
     if (voyage.destinationPortLabel) {
       container.destinationCity = voyage.destinationPortLabel;
       container.destinationConfidence = voyage.destinationConfidence;
     }
-    if (voyage.status === VoyageStatus.ARRIVED && voyage.departedAt && voyage.arrivedAt) {
+    if (
+      voyage.status === VoyageStatus.ARRIVED &&
+      voyage.departedAt &&
+      voyage.arrivedAt
+    ) {
       container.transitDays = Math.round(
-        (voyage.arrivedAt.getTime() - voyage.departedAt.getTime()) / (1000 * 60 * 60 * 24),
+        (voyage.arrivedAt.getTime() - voyage.departedAt.getTime()) /
+          (1000 * 60 * 60 * 24),
       );
     }
     await this.containerRepo.save(container);

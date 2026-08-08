@@ -1,14 +1,23 @@
-import { Column, CreateDateColumn, Entity, PrimaryColumn, UpdateDateColumn } from 'typeorm';
+import {
+  Column,
+  CreateDateColumn,
+  Entity,
+  PrimaryColumn,
+  UpdateDateColumn,
+} from 'typeorm';
 
 /**
- * A vessel tracked via live AIS (AISstream.io). Every field below is either
- * a direct pass-through of a received AIS message, or a labelled estimate
- * derived from real AIS fields (see *Justification columns) - never seeded.
+ * A vessel tracked via live AIS (AISstream.io), or an explicitly labelled
+ * development fixture when MATCHING_FIXTURE_ENABLED is active. dataSource
+ * prevents fixture values from being mistaken for live AIS observations.
  */
 @Entity('vessels')
 export class Vessel {
   @PrimaryColumn({ type: 'varchar' })
   mmsi: string;
+
+  @Column({ name: 'data_source', type: 'varchar', default: 'live_ais' })
+  dataSource: 'live_ais' | 'development_fixture';
 
   @Column({ type: 'varchar', nullable: true })
   imo: string | null;
@@ -37,7 +46,11 @@ export class Vessel {
   @Column({ name: 'estimated_capacity_cbm', type: 'real', nullable: true })
   estimatedCapacityCbm: number | null;
 
-  @Column({ name: 'capacity_estimate_justification', type: 'text', nullable: true })
+  @Column({
+    name: 'capacity_estimate_justification',
+    type: 'text',
+    nullable: true,
+  })
   capacityEstimateJustification: string | null;
 
   @Column({ name: 'min_draught_m', type: 'real', nullable: true })

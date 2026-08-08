@@ -2,7 +2,13 @@ import { BadRequestException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { TypeOrmModule, getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { existsSync, readdirSync, statSync, unlinkSync } from 'fs';
+import {
+  existsSync,
+  readFileSync,
+  readdirSync,
+  statSync,
+  unlinkSync,
+} from 'fs';
 import { join } from 'path';
 import { Document, DocumentType } from './entities/document.entity';
 import { DocumentsService } from './documents.service';
@@ -60,6 +66,8 @@ const VALID_FIELDS: Record<DocumentType, Record<string, string>> = {
     consigneeCompanyAddress: 'Tokyo Trading Co., Tokyo',
     consigneeCountry: 'Japan',
     shipDate: '01/08/26',
+    hsCode: '520819',
+    totalVolume: '1.8',
     totalGrossWeight: '50 KG',
     signatureNameTitleDate: 'Adi Wijaya, Owner, 01/08/26',
   },
@@ -69,6 +77,9 @@ const VALID_FIELDS: Record<DocumentType, Record<string, string>> = {
     shipFromNameAddress: 'Batik Nusantara, Bandung',
     shipToNameAddress: 'Tokyo Trading Co., Tokyo',
     carrierName: 'Maersk',
+    portOfLoading: 'Tanjung Priok',
+    portOfDischarge: 'Tokyo',
+    measurementCbm: '1.8',
     freightChargeTerms: 'Prepaid',
   },
 };
@@ -207,7 +218,7 @@ describe('DocumentsService', () => {
     DocumentType.PACKING_LIST,
     DocumentType.BILL_OF_LADING,
   ])(
-    'generates a real, non-empty .docx file for %s and persists it',
+    'generates real PDF and DOCX drafts for %s and persists them',
     async (type) => {
       const created = await service.createDocument('user-1', {
         type,
@@ -215,8 +226,12 @@ describe('DocumentsService', () => {
         items: VALID_ITEMS[type],
       });
 
-      expect(created.fileUrl).toMatch(/^\/uploads\/documents\/.+\.docx$/);
+      expect(created.fileUrl).toMatch(/^\/uploads\/documents\/.+\.pdf$/);
+      expect(created.docxFileUrl).toMatch(/^\/uploads\/documents\/.+\.docx$/);
       expect(created.generatedContent).toBeNull();
+      expect(created.status).toBe('draft_generated');
+      expect(created.documentOrigin).toBe('generated');
+      expect(created.templateVersion).toBe('1.0.0');
       expect(created.fields).toEqual(VALID_FIELDS[type]);
       expect(created.items).toEqual(VALID_ITEMS[type]);
 
@@ -225,10 +240,17 @@ describe('DocumentsService', () => {
         created.fileUrl!.replace(/^\//, ''),
       );
       expect(existsSync(absolutePath)).toBe(true);
-      // A real .docx is a zip archive; PK\x03\x04 is the zip local-file-header magic.
-      const buffer = require('fs').readFileSync(absolutePath) as Buffer;
-      expect(buffer.subarray(0, 4).toString('hex')).toBe('504b0304');
+      const pdfBuffer = readFileSync(absolutePath);
+      expect(pdfBuffer.subarray(0, 5).toString()).toBe('%PDF-');
       expect(statSync(absolutePath).size).toBeGreaterThan(1000);
+
+      const docxPath = join(
+        process.cwd(),
+        created.docxFileUrl!.replace(/^\//, ''),
+      );
+      const docxBuffer = readFileSync(docxPath);
+      expect(docxBuffer.subarray(0, 4).toString('hex')).toBe('504b0304');
+      expect(statSync(docxPath).size).toBeGreaterThan(1000);
 
       const fetched = await service.getDocumentById(created.id, 'user-1');
       expect(fetched.type).toBe(type);
@@ -236,13 +258,14 @@ describe('DocumentsService', () => {
     },
   );
 
-  it('generates legacy text content (no docx) for SVLK and PEB', async () => {
+  it('generates a PDF draft and keeps legacy preview content for SVLK', async () => {
     const created = await service.createDocument('user-1', {
       type: DocumentType.SVLK,
       fields: VALID_FIELDS[DocumentType.SVLK],
     });
 
-    expect(created.fileUrl).toBeNull();
+    expect(created.fileUrl).toMatch(/^\/uploads\/documents\/.+\.pdf$/);
+    expect(created.docxFileUrl).toBeNull();
     expect(created.generatedContent).toContain(
       'SERTIFIKAT SISTEM VERIFIKASI LEGALITAS KAYU',
     );

@@ -47,7 +47,9 @@ export class ShipmentsController {
   }
 
   @Patch(':id')
-  @ApiOperation({ summary: 'Perbarui status/tindakan pengiriman' })
+  @ApiOperation({
+    summary: 'Perbarui status, tindakan, atau informasi kargo pengiriman',
+  })
   async updateShipment(
     @CurrentUser() user: User,
     @Param('id') id: string,

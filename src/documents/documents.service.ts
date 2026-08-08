@@ -10,8 +10,13 @@ import { join } from 'path';
 import { Repository } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
 import { generateDocumentDocx } from './docx-generator';
+import { generateDraftPdf } from './pdf-generator';
 import { CreateDocumentDto } from './dto/create-document.dto';
-import { Document, DocumentType } from './entities/document.entity';
+import {
+  Document,
+  DocumentOrigin,
+  DocumentType,
+} from './entities/document.entity';
 import { ShipmentFact } from './entities/shipment-fact.entity';
 import { Shipment } from '../shipments/entities/shipment.entity';
 
@@ -26,7 +31,7 @@ export interface ItemsSchema {
   columns: FieldDef[];
 }
 
-interface DocumentSchemaDef {
+export interface DocumentSchemaDef {
   label: string;
   category: string;
   fields: FieldDef[];
@@ -41,7 +46,7 @@ function isBlank(value: unknown): boolean {
   );
 }
 
-const DOCUMENT_SCHEMAS: Record<DocumentType, DocumentSchemaDef> = {
+export const DOCUMENT_SCHEMAS: Record<DocumentType, DocumentSchemaDef> = {
   [DocumentType.SVLK]: {
     label: 'Sistem Verifikasi Legalitas Kayu',
     category: 'Dokumen Legalitas',
@@ -265,6 +270,9 @@ const DOCUMENT_SCHEMAS: Record<DocumentType, DocumentSchemaDef> = {
       { key: 'paymentTerms', label: 'Payment Terms', required: false },
       { key: 'billOfLading', label: 'Bill of Lading', required: false },
       { key: 'packageType', label: 'Package Type', required: false },
+      { key: 'portOfLoading', label: 'Port of Loading', required: false },
+      { key: 'hsCode', label: 'HS Code', required: true },
+      { key: 'totalVolume', label: 'Total Volume (CBM)', required: true },
       {
         key: 'specialInstructions',
         label: 'Special Instructions',
@@ -321,6 +329,14 @@ const DOCUMENT_SCHEMAS: Record<DocumentType, DocumentSchemaDef> = {
       },
       { key: 'shipToCid', label: 'Ship To – CID#', required: false },
       { key: 'carrierName', label: 'Carrier Name', required: true },
+      { key: 'notifyParty', label: 'Notify Party', required: false },
+      { key: 'portOfLoading', label: 'Port of Loading', required: true },
+      { key: 'portOfDischarge', label: 'Port of Discharge', required: true },
+      { key: 'vesselName', label: 'Vessel', required: false },
+      { key: 'voyageNumber', label: 'Voyage Number', required: false },
+      { key: 'bookingNumber', label: 'Booking Number', required: false },
+      { key: 'containerNumber', label: 'Container Number', required: false },
+      { key: 'measurementCbm', label: 'Measurement / CBM', required: true },
       { key: 'trailerNo', label: 'Trailer No.', required: false },
       { key: 'sealNumbers', label: 'Seal Number(s)', required: false },
       { key: 'scac', label: 'SCAC', required: false },
@@ -415,7 +431,27 @@ export class DocumentsService {
     this.validateRequiredFields(schema, fields);
 
     let fileUrl: string | null = null;
+    let docxFileUrl: string | null = null;
     let generatedContent: string | null = null;
+    const generatedAt = new Date();
+    const templateVersion = '1.0.0';
+    const shipment =
+      dto.shipmentId && this.shipmentRepo
+        ? await this.shipmentRepo.findOne({
+            where: { id: dto.shipmentId, userId },
+          })
+        : null;
+    const shipmentLabel = (shipment?.shipmentCode ?? 'UNASSIGNED').replace(
+      /[^A-Za-z0-9_-]/g,
+      '_',
+    );
+    const generatedSources = [
+      'company_profile',
+      'shipment',
+      'cargo',
+      ...(shipment?.containerId ? ['container_match'] : []),
+      'uploaded_document',
+    ];
 
     if (schema.itemsSchema) {
       if (!dto.items || dto.items.length === 0) {
@@ -427,12 +463,31 @@ export class DocumentsService {
       const buffer = await generateDocumentDocx(dto.type, fields, dto.items);
       const dir = join(process.cwd(), 'uploads', 'documents');
       mkdirSync(dir, { recursive: true });
-      const filename = `${dto.type.toLowerCase()}-${uuidv4()}.docx`;
-      writeFileSync(join(dir, filename), buffer);
-      fileUrl = `/uploads/documents/${filename}`;
+      const docxFilename = `${dto.type.toLowerCase()}-${shipmentLabel}-DRAFT-${uuidv4()}.docx`;
+      writeFileSync(join(dir, docxFilename), buffer);
+      docxFileUrl = `/uploads/documents/${docxFilename}`;
     } else {
       generatedContent = this.generateLegacyContent(dto.type, fields);
     }
+
+    const pdfBuffer = generateDraftPdf(
+      schema.label,
+      fields,
+      dto.items ?? null,
+      {
+        documentType: dto.type,
+        shipmentId: shipment?.shipmentCode ?? dto.shipmentId ?? null,
+        templateVersion,
+        generatedAt,
+        generatedBy: userId,
+        sources: generatedSources,
+      },
+    );
+    const outputDir = join(process.cwd(), 'uploads', 'documents');
+    mkdirSync(outputDir, { recursive: true });
+    const pdfFilename = `${dto.type.toLowerCase()}-${shipmentLabel}-DRAFT-${uuidv4()}.pdf`;
+    writeFileSync(join(outputDir, pdfFilename), pdfBuffer);
+    fileUrl = `/uploads/documents/${pdfFilename}`;
 
     const doc = this.documentRepo.create({
       userId,
@@ -442,7 +497,14 @@ export class DocumentsService {
       items: dto.items ? JSON.stringify(dto.items) : null,
       generatedContent,
       fileUrl,
-      status: 'generated',
+      docxFileUrl,
+      documentOrigin: DocumentOrigin.GENERATED,
+      templateVersion,
+      shipmentSnapshotId: uuidv4(),
+      generatedAt,
+      generatedBy: userId,
+      generatedSources: JSON.stringify(generatedSources),
+      status: 'draft_generated',
     });
     const saved = await this.documentRepo.save(doc);
     return this.toResponse(saved);

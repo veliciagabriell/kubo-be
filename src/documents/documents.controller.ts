@@ -30,6 +30,9 @@ import { ApiConsumes } from '@nestjs/swagger';
 import { DocumentIntelligenceService } from './document-intelligence.service';
 import { UploadDocumentDto } from './dto/upload-document.dto';
 import { CorrectExtractedFieldDto } from './dto/correct-extracted-field.dto';
+import { DocumentAssistantService } from './document-assistant.service';
+import { GenerateDocumentDraftDto } from './dto/generate-document-draft.dto';
+import { ResolveDocumentConflictDto } from './dto/resolve-document-conflict.dto';
 
 @ApiTags('Documents')
 @ApiBearerAuth('access-token')
@@ -126,7 +129,95 @@ export class DocumentsController {
 export class DocumentIntelligenceController {
   constructor(
     private readonly intelligenceService: DocumentIntelligenceService,
+    private readonly assistantService: DocumentAssistantService,
   ) {}
+
+  @Get('shipments/:shipmentId/document-assistant')
+  @ApiOperation({
+    summary: 'Shipment document readiness and knowledge overview',
+  })
+  async getAssistantOverview(
+    @CurrentUser() user: User,
+    @Param('shipmentId') shipmentId: string,
+  ) {
+    return {
+      data: await this.assistantService.getOverview(shipmentId, user.id),
+    };
+  }
+
+  @Get('shipments/:shipmentId/document-readiness/:type')
+  @ApiOperation({
+    summary: 'Known, missing, conflicting, and external fields for a draft',
+  })
+  @ApiParam({ name: 'type', enum: DocumentType })
+  async getDocumentReadiness(
+    @CurrentUser() user: User,
+    @Param('shipmentId') shipmentId: string,
+    @Param('type') type: DocumentType,
+  ) {
+    return {
+      data: await this.assistantService.getReadiness(shipmentId, user.id, type),
+    };
+  }
+
+  @Get('shipments/:shipmentId/documents/:documentId/validation')
+  @ApiOperation({
+    summary: 'Validate an uploaded document against shipment knowledge',
+  })
+  async validateUploadedDocument(
+    @CurrentUser() user: User,
+    @Param('shipmentId') shipmentId: string,
+    @Param('documentId') documentId: string,
+  ) {
+    return {
+      data: await this.assistantService.validateUploadedDocument(
+        shipmentId,
+        documentId,
+        user.id,
+      ),
+    };
+  }
+
+  @Post('shipments/:shipmentId/document-conflicts/resolve')
+  @ApiOperation({
+    summary: 'Persist a user-confirmed canonical shipment value',
+  })
+  async resolveDocumentConflict(
+    @CurrentUser() user: User,
+    @Param('shipmentId') shipmentId: string,
+    @Body() dto: ResolveDocumentConflictDto,
+  ) {
+    return {
+      message: 'Conflict resolved with user confirmation',
+      data: await this.assistantService.resolveConflict(
+        shipmentId,
+        user.id,
+        dto,
+      ),
+    };
+  }
+
+  @Post('shipments/:shipmentId/document-drafts/:type')
+  @ApiOperation({
+    summary: 'Generate a controlled AI draft from shipment knowledge',
+  })
+  @ApiParam({ name: 'type', enum: DocumentType })
+  async generateDocumentDraft(
+    @CurrentUser() user: User,
+    @Param('shipmentId') shipmentId: string,
+    @Param('type') type: DocumentType,
+    @Body() dto: GenerateDocumentDraftDto,
+  ) {
+    return {
+      message: 'AI draft generated; not an official document',
+      data: await this.assistantService.generateDraft(
+        shipmentId,
+        user.id,
+        type,
+        dto,
+      ),
+    };
+  }
 
   @Post('shipments/:shipmentId/documents')
   @HttpCode(HttpStatus.ACCEPTED)

@@ -156,7 +156,7 @@ export class DocumentIntelligenceService implements OnModuleInit {
       await this.documentRepo.save(document);
 
       await this.fieldRepo.delete({ documentId: document.id });
-      const values = this.extractor.extract(parsed);
+      const values = this.extractor.extract(parsed, classification.type);
       for (const value of values) {
         const field = await this.fieldRepo.save(
           this.fieldRepo.create({

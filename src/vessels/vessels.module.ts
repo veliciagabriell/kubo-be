@@ -11,6 +11,6 @@ import { VoyageDetectionService } from './voyage-detection.service';
   imports: [TypeOrmModule.forFeature([Vessel, Voyage])],
   controllers: [VesselsController],
   providers: [AisStreamService, VoyageDetectionService, VesselsService],
-  exports: [VesselsService],
+  exports: [AisStreamService, VesselsService],
 })
 export class VesselsModule {}

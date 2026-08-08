@@ -4,6 +4,7 @@ import { Vessel } from '../vessels/entities/vessel.entity';
 import { Voyage } from '../vessels/entities/voyage.entity';
 import { AiMatchingService } from './ai-matching.service';
 import { Container } from './entities/container.entity';
+import { DevelopmentMatchingFixtureService } from './development-matching-fixture.service';
 import { MatchingController } from './matching.controller';
 import { MatchingService } from './matching.service';
 
@@ -16,7 +17,11 @@ import { MatchingService } from './matching.service';
   // two modules decoupled.
   imports: [TypeOrmModule.forFeature([Container, Vessel, Voyage])],
   controllers: [MatchingController],
-  providers: [MatchingService, AiMatchingService],
+  providers: [
+    MatchingService,
+    AiMatchingService,
+    DevelopmentMatchingFixtureService,
+  ],
   exports: [MatchingService],
 })
 export class MatchingModule {}

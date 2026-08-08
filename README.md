@@ -113,7 +113,7 @@ Pastikan Docker Desktop sudah aktif, lalu dari root repository:
 
 ```powershell
 Copy-Item .env.example .env
-docker compose -f infrastructure/docker-compose.yml up -d --build
+docker compose --env-file .env -f infrastructure/docker-compose.yml up -d --build
 docker compose -f infrastructure/docker-compose.yml ps
 ```
 
@@ -133,6 +133,37 @@ sehingga startup pertama lebih lama daripada startup berikutnya. Periksa health:
 curl.exe http://localhost:3001/api/v1/health
 curl.exe http://localhost:8000/health
 ```
+
+Health KUBO API juga menampilkan status AISstream di `integrations.aisstream`,
+termasuk `connected`, `healthy`, `lastMessageAt`, `lastDataMessageAt`, jumlah
+pesan, jumlah reconnect, dan error terakhir. WebSocket yang terbuka tetapi tidak
+menerima data selama `AISSTREAM_WATCHDOG_TIMEOUT_MS` (default 60 detik) ditandai
+`degraded` dan otomatis direconnect. Reconnect memakai exponential backoff dan
+respons HTTP 429 menyalakan cooldown `AISSTREAM_RATE_LIMIT_COOLDOWN_MS` (default
+5 menit), sehingga aplikasi tidak membuat reconnect storm. Client juga memakai
+WebSocket ping/pong serta menerima position/static report AIS Class A dan Class B.
+
+### Menguji matching ketika AISstream bermasalah
+
+Aktifkan fixture hanya pada development dengan nilai berikut di `.env`:
+
+```dotenv
+APP_ENV=development
+MATCHING_FIXTURE_ENABLED=true
+MATCHING_FIXTURE_DEPARTURE_DAYS=14
+```
+
+Kemudian rebuild API:
+
+```powershell
+docker compose --env-file .env -f infrastructure/docker-compose.yml up -d --build --force-recreate kubo-api
+```
+
+Mode ini membuat tiga vessel, voyage, dan container deterministik untuk menguji
+matching, Gemini re-ranking, checkout/order, shipment, dokumen, dan OCR. Semua
+record ditandai `dataSource: "development_fixture"` dan penjelasan tanggal/biaya
+menyatakan bahwa nilainya bukan data AIS. Fixture ditolak kecuali `APP_ENV`
+bernilai `development` atau `test`; jangan aktifkan flag ini pada deployment.
 
 Hentikan container tanpa menghapus database/upload volume:
 
@@ -157,7 +188,7 @@ gunakan Opsi 2 jika ingin tetap memakai database host yang sudah ada.
 Jalankan Redis dan Document AI saja:
 
 ```powershell
-docker compose -f infrastructure/docker-compose.yml up -d --build redis document-ai-service
+docker compose --env-file .env -f infrastructure/docker-compose.yml up -d --build redis document-ai-service
 Copy-Item .env.example .env
 npm install
 npm run start:dev

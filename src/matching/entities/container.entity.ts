@@ -23,7 +23,8 @@ export enum ContainerType {
  *    (distance/speed from its current AIS position), which MatchingService
  *    also recomputes live at view-build time via `originPortId` for as long
  *    as `departureConfirmed` stays false.
- * Never seeded either way. Once the vessel is actually observed leaving the
+ * Production rows are never seeded. Explicit development fixtures use
+ * dataSource=development_fixture. Once a live vessel is observed leaving the
  * origin port zone (`voyage.updated` -> DEPARTED), `departureDate` is
  * overwritten with the real AIS-confirmed date and `departureConfirmed`
  * flips to true. `totalCapacityCbm` uses the real ISO standard container
@@ -35,6 +36,9 @@ export enum ContainerType {
 export class Container {
   @PrimaryGeneratedColumn('uuid')
   id: string;
+
+  @Column({ name: 'data_source', type: 'varchar', default: 'live_ais' })
+  dataSource: 'live_ais' | 'development_fixture';
 
   @Column({ name: 'voyage_id', unique: true })
   voyageId: string;
@@ -74,7 +78,11 @@ export class Container {
   @Column({ name: 'departure_confirmed', default: false })
   departureConfirmed: boolean;
 
-  @Column({ name: 'departure_estimate_justification', type: 'text', nullable: true })
+  @Column({
+    name: 'departure_estimate_justification',
+    type: 'text',
+    nullable: true,
+  })
   departureEstimateJustification: string | null;
 
   @Column({ name: 'cargo_cutoff_date', type: 'varchar', nullable: true })
@@ -90,7 +98,11 @@ export class Container {
   @Column({ name: 'cost_per_cbm', type: 'integer' })
   costPerCbm: number;
 
-  @Column({ name: 'freight_estimate_justification', type: 'text', nullable: true })
+  @Column({
+    name: 'freight_estimate_justification',
+    type: 'text',
+    nullable: true,
+  })
   freightEstimateJustification: string | null;
 
   @Column({ default: 'open' })
