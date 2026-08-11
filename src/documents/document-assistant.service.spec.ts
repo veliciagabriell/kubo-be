@@ -166,4 +166,37 @@ describe('DocumentAssistantService', () => {
       }),
     );
   });
+
+  it('treats a user-confirmed canonical value as the resolved result', async () => {
+    factRepo.find.mockResolvedValueOnce([
+      {
+        shipmentId: shipment.id,
+        userId: user.id,
+        field: 'gross_weight',
+        value: '180',
+        unit: 'kg',
+        confidence: 1,
+        isUserVerified: true,
+      },
+    ]);
+
+    const validation = await service.validateUploadedDocument(
+      shipment.id,
+      document.id,
+      user.id,
+    );
+    const field = validation.fields.find(
+      (entry) => entry.canonicalKey === 'gross_weight',
+    );
+
+    expect(field).toMatchObject({
+      value: '180',
+      status: 'valid',
+      conflictCandidates: undefined,
+      sources: [
+        expect.objectContaining({ label: 'User Confirmed Value' }),
+        expect.objectContaining({ fileName: 'Packing_List.pdf' }),
+      ],
+    });
+  });
 });

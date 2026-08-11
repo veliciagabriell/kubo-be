@@ -874,9 +874,32 @@ export class DocumentAssistantService {
     knowledge: ShipmentKnowledge,
   ): DocumentField {
     const candidates = knowledge.candidates.get(field.canonicalKey) ?? [];
+    const verified = candidates.find((candidate) => candidate.verified);
     const documentCandidates = candidates.filter(
       (candidate) => candidate.source.documentId === document.id,
     );
+    if (verified) {
+      return {
+        ...field,
+        value: verified.value,
+        normalizedValue: verified.normalizedValue,
+        unit: verified.unit,
+        confidence: verified.confidence,
+        status: this.isValid(field.canonicalKey, verified.value)
+          ? 'valid'
+          : 'invalid',
+        sources: [
+          verified.source,
+          ...documentCandidates
+            .filter(
+              (candidate) =>
+                candidate.normalizedValue !== verified.normalizedValue,
+            )
+            .map((candidate) => candidate.source),
+        ],
+        conflictCandidates: undefined,
+      };
+    }
     const selected = documentCandidates[0];
     if (!selected)
       return {
