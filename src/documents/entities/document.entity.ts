@@ -3,6 +3,7 @@ import {
   Column,
   PrimaryGeneratedColumn,
   CreateDateColumn,
+  UpdateDateColumn,
   ManyToOne,
   JoinColumn,
 } from 'typeorm';
@@ -149,6 +150,15 @@ export class Document {
   @Column({ name: 'duplicate_of_id', type: 'varchar', nullable: true })
   duplicateOfId: string | null;
 
+  @Column({ name: 'last_validated_at', type: 'datetime', nullable: true })
+  lastValidatedAt: Date | null;
+
+  @Column({ name: 'validation_count', type: 'integer', default: 0 })
+  validationCount: number;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
+
+  @UpdateDateColumn({ name: 'updated_at' })
+  updatedAt: Date;
 }

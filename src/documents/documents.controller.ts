@@ -160,6 +160,19 @@ export class DocumentIntelligenceController {
     };
   }
 
+  @Get('shipments/:shipmentId/document-history')
+  @ApiOperation({
+    summary: 'Generated, uploaded, and checked document history by shipment',
+  })
+  async getDocumentHistory(
+    @CurrentUser() user: User,
+    @Param('shipmentId') shipmentId: string,
+  ) {
+    return {
+      data: await this.assistantService.getHistory(shipmentId, user.id),
+    };
+  }
+
   @Get('shipments/:shipmentId/documents/:documentId/validation')
   @ApiOperation({
     summary: 'Validate an uploaded document against shipment knowledge',

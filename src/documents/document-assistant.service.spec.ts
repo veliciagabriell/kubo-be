@@ -82,6 +82,9 @@ describe('DocumentAssistantService', () => {
   const shipmentRepo = { findOne: jest.fn().mockResolvedValue(shipment) };
   const userRepo = { findOneBy: jest.fn().mockResolvedValue(user) };
   const documentRepo = { find: jest.fn().mockResolvedValue([document]) };
+  Object.assign(documentRepo, {
+    save: jest.fn((value: Document) => Promise.resolve(value)),
+  });
   const fieldRepo = {
     find: jest.fn().mockResolvedValue([grossWeightField]),
     findOne: jest.fn().mockResolvedValue(grossWeightField),
@@ -146,6 +149,9 @@ describe('DocumentAssistantService', () => {
       ],
     });
     expect(validation.debug).toMatchObject({ parser: 'docling' });
+    expect(documentRepo.save).toHaveBeenCalledWith(document);
+    expect(document.lastValidatedAt).toBeInstanceOf(Date);
+    expect(document).toMatchObject({ validationCount: 1, status: 'conflict' });
   });
 
   it('persists an explicit user conflict decision as a verified fact', async () => {

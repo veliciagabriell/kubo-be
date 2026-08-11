@@ -607,8 +607,21 @@ export class DocumentsService {
     userId: string,
     shipmentId?: string,
   ): Promise<DocumentResponse[]> {
+    let resolvedShipmentId = shipmentId;
+    if (shipmentId && this.shipmentRepo) {
+      const shipment = await this.shipmentRepo.findOne({
+        where: [
+          { id: shipmentId, userId },
+          { shipmentCode: shipmentId, userId },
+        ],
+      });
+      if (!shipment) throw new NotFoundException('Shipment not found');
+      resolvedShipmentId = shipment.id;
+    }
     const docs = await this.documentRepo.find({
-      where: shipmentId ? { userId, shipmentId } : { userId },
+      where: resolvedShipmentId
+        ? { userId, shipmentId: resolvedShipmentId }
+        : { userId },
       order: { createdAt: 'DESC' },
     });
     return docs.map((doc) => this.toResponse(doc));

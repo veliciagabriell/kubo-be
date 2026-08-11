@@ -334,6 +334,14 @@ export class DocumentAssistantService {
       ),
     );
     const readiness = this.calculateReadiness(fields);
+    document.lastValidatedAt = new Date();
+    document.validationCount = (document.validationCount ?? 0) + 1;
+    document.status = readiness.conflictFields
+      ? 'conflict'
+      : readiness.missingFields || readiness.invalidFields
+        ? 'needs_review'
+        : 'verified';
+    await this.documentRepo.save(document);
     return {
       document: {
         id: document.id,
@@ -356,6 +364,67 @@ export class DocumentAssistantService {
         classificationMethod: document.classificationMethod,
         hasTextLayer: document.hasTextLayer,
       },
+    };
+  }
+
+  async getHistory(shipmentId: string, userId: string) {
+    const knowledge = await this.loadKnowledge(shipmentId, userId);
+    const documents = knowledge.documents.map((document) => ({
+      id: document.id,
+      shipmentId: knowledge.shipment.shipmentCode,
+      type: document.type,
+      label: document.type
+        ? DOCUMENT_SCHEMAS[document.type]?.label
+        : 'Uploaded Document',
+      origin: document.documentOrigin,
+      status: document.status,
+      fileName:
+        document.originalFileName ?? document.fileUrl?.split('/').at(-1),
+      fileUrl: document.fileUrl,
+      docxFileUrl: document.docxFileUrl,
+      version: document.fileVersion,
+      createdAt: document.createdAt,
+      generatedAt: document.generatedAt,
+      lastValidatedAt: document.lastValidatedAt,
+      validationCount: document.validationCount ?? 0,
+    }));
+    const events = documents
+      .flatMap((document) => {
+        const entries = [
+          {
+            id: `${document.id}:created`,
+            documentId: document.id,
+            documentType: document.type,
+            documentLabel: document.label,
+            action:
+              document.origin === DocumentOrigin.GENERATED
+                ? 'generated'
+                : 'uploaded',
+            occurredAt: document.generatedAt ?? document.createdAt,
+            status: document.status,
+          },
+        ];
+        if (document.lastValidatedAt)
+          entries.push({
+            id: `${document.id}:checked:${document.validationCount}`,
+            documentId: document.id,
+            documentType: document.type,
+            documentLabel: document.label,
+            action: 'checked',
+            occurredAt: document.lastValidatedAt,
+            status: document.status,
+          });
+        return entries;
+      })
+      .sort(
+        (left, right) =>
+          new Date(right.occurredAt).getTime() -
+          new Date(left.occurredAt).getTime(),
+      );
+    return {
+      shipment: this.shipmentSummary(knowledge.shipment),
+      documents,
+      events,
     };
   }
 
