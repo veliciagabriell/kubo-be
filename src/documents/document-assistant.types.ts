@@ -37,6 +37,8 @@ export interface ConflictCandidate {
 export interface DocumentField<T = string> {
   key: string;
   canonicalKey: string;
+  /** Template field aliases backed by this one canonical shipment field. */
+  documentKeys?: string[];
   label: string;
   required: boolean;
   userEditable: boolean;

@@ -199,4 +199,53 @@ describe('DocumentAssistantService', () => {
       ],
     });
   });
+
+  it('returns one canonical field with selectable candidates for duplicate template aliases', async () => {
+    const invoiceDocument = {
+      ...document,
+      id: 'invoice-document',
+      type: DocumentType.COMMERCIAL_INVOICE,
+      originalFileName: 'Commercial_Invoice.pdf',
+    } as Document;
+    const originCountryField = {
+      id: 'origin-country-field',
+      documentId: invoiceDocument.id,
+      document: invoiceDocument,
+      field: 'origin_country',
+      value: 'Vietnam',
+      confidence: 0.91,
+      pageNumber: 1,
+      isCorrected: false,
+    } as ExtractedField;
+    documentRepo.find.mockResolvedValueOnce([invoiceDocument]);
+    fieldRepo.find.mockResolvedValueOnce([originCountryField]);
+
+    const readiness = await service.getReadiness(
+      shipment.id,
+      user.id,
+      DocumentType.COMMERCIAL_INVOICE,
+    );
+    const originFields = readiness.fields.filter(
+      (field) => field.canonicalKey === 'origin_country',
+    );
+    const consigneeFields = readiness.fields.filter(
+      (field) => field.canonicalKey === 'consignee_name_address',
+    );
+
+    expect(originFields).toHaveLength(1);
+    expect(originFields[0]).toMatchObject({
+      key: 'origin_country',
+      status: 'conflict',
+    });
+    expect(originFields[0].documentKeys).toEqual(
+      expect.arrayContaining(['countryOfExport', 'countryOfManufacture']),
+    );
+    expect(
+      originFields[0].conflictCandidates?.map((candidate) => candidate.value),
+    ).toEqual(expect.arrayContaining(['Indonesia', 'Vietnam']));
+    expect(consigneeFields).toHaveLength(1);
+    expect(consigneeFields[0].documentKeys).toEqual(
+      expect.arrayContaining(['consigneeNameAddress', 'importerNameAddress']),
+    );
+  });
 });

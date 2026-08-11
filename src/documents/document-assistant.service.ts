@@ -316,7 +316,7 @@ export class DocumentAssistantService {
 
   async getReadiness(shipmentId: string, userId: string, type: DocumentType) {
     const knowledge = await this.loadKnowledge(shipmentId, userId);
-    return this.buildReadiness(type, knowledge);
+    return this.toCanonicalReadiness(this.buildReadiness(type, knowledge));
   }
 
   async validateUploadedDocument(
@@ -328,8 +328,10 @@ export class DocumentAssistantService {
     const document = knowledge.documents.find((item) => item.id === documentId);
     if (!document?.type) throw new NotFoundException('Document not found');
     const generated = this.buildReadiness(document.type, knowledge);
-    const fields = generated.fields.map((field) =>
-      this.validateFieldForDocument(field, document, knowledge),
+    const fields = this.consolidateCanonicalFields(
+      generated.fields.map((field) =>
+        this.validateFieldForDocument(field, document, knowledge),
+      ),
     );
     const readiness = this.calculateReadiness(fields);
     return {
@@ -403,7 +405,9 @@ export class DocumentAssistantService {
     const unresolved: string[] = [];
 
     for (const field of result.fields) {
-      const suppliedValue = supplied[field.key]?.trim();
+      const suppliedValue = (
+        supplied[field.key] ?? supplied[field.canonicalKey]
+      )?.trim();
       const mapping = this.mappingFor(type, field.key);
       const value = suppliedValue || field.value || mapping.externalPlaceholder;
       if (field.required && !value && field.status !== 'waiting_external_data')
@@ -718,7 +722,9 @@ export class DocumentAssistantService {
   }
 
   private buildDocumentCard(type: DocumentType, knowledge: ShipmentKnowledge) {
-    const result = this.buildReadiness(type, knowledge);
+    const result = this.toCanonicalReadiness(
+      this.buildReadiness(type, knowledge),
+    );
     const latest = knowledge.documents.find(
       (document) => document.type === type,
     );
@@ -967,6 +973,86 @@ export class DocumentAssistantService {
         (resolvedRequired / Math.max(required.length, 1)) * 100,
       ),
       canGenerateDraft: blockers.length === 0,
+    };
+  }
+
+  /**
+   * A controlled template may expose multiple document fields backed by the
+   * same shipment fact (for example consignee/importer or export/manufacture
+   * country). The assistant API exposes that fact once and lets the user pick
+   * between distinct candidate values. Template aliases remain available in
+   * documentKeys and are expanded again by generateDraft.
+   */
+  private consolidateCanonicalFields(fields: DocumentField[]): DocumentField[] {
+    const groups = new Map<string, DocumentField[]>();
+    for (const field of fields) {
+      const current = groups.get(field.canonicalKey) ?? [];
+      current.push(field);
+      groups.set(field.canonicalKey, current);
+    }
+
+    const statusRank: Record<FieldValidationStatus, number> = {
+      conflict: 6,
+      invalid: 5,
+      needs_confirmation: 4,
+      missing: 3,
+      waiting_external_data: 2,
+      valid: 1,
+    };
+
+    return [...groups.entries()].map(([canonicalKey, aliases]) => {
+      const primary = [...aliases].sort((left, right) => {
+        if (left.required !== right.required) return left.required ? -1 : 1;
+        return statusRank[right.status] - statusRank[left.status];
+      })[0];
+      const status = aliases.reduce<FieldValidationStatus>(
+        (selected, field) =>
+          statusRank[field.status] > statusRank[selected]
+            ? field.status
+            : selected,
+        primary.status,
+      );
+      const sources = new Map<string, FieldSource>();
+      const candidates = new Map<string, ConflictCandidate>();
+
+      for (const alias of aliases) {
+        for (const source of alias.sources) {
+          const sourceKey = `${source.sourceType}:${source.documentId ?? ''}:${source.page ?? ''}:${source.label}`;
+          if (!sources.has(sourceKey)) sources.set(sourceKey, source);
+        }
+        for (const candidate of alias.conflictCandidates ?? []) {
+          const candidateKey = `${candidate.normalizedValue}:${candidate.source.sourceType}:${candidate.source.documentId ?? ''}`;
+          if (!candidates.has(candidateKey))
+            candidates.set(candidateKey, candidate);
+        }
+      }
+
+      return {
+        ...primary,
+        key: canonicalKey,
+        canonicalKey,
+        documentKeys: aliases.flatMap(
+          (alias) => alias.documentKeys ?? [alias.key],
+        ),
+        required: aliases.some((alias) => alias.required),
+        userEditable: aliases.some((alias) => alias.userEditable),
+        status,
+        sources: [...sources.values()],
+        conflictCandidates:
+          status === 'conflict' ? [...candidates.values()] : undefined,
+      };
+    });
+  }
+
+  private toCanonicalReadiness<
+    T extends { fields: DocumentField[]; readiness: DocumentReadiness },
+  >(result: T): T {
+    const fields = this.consolidateCanonicalFields(result.fields);
+    return {
+      ...result,
+      fields,
+      readiness: this.calculateReadiness(fields),
+      sources: this.uniqueSourceLabels(fields),
     };
   }
 
