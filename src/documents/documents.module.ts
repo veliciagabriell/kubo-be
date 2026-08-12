@@ -17,6 +17,11 @@ import { DocumentParserService } from './document-parser.service';
 import { DocumentExtractorService } from './document-extractor.service';
 import { DocumentProcessingQueueService } from './document-processing-queue.service';
 import { DocumentAssistantService } from './document-assistant.service';
+import { CanonicalShipmentService } from './canonical/canonical-shipment.service';
+import { DocumentGenerationService } from './generation/document-generation.service';
+import { DocxTemplateRenderer } from './renderers/docx-template.renderer';
+import { TemplatePdfRenderer } from './renderers/template-pdf.renderer';
+import { DocumentTemplateRegistry } from './templates/document-template.registry';
 
 @Module({
   imports: [
@@ -38,7 +43,16 @@ import { DocumentAssistantService } from './document-assistant.service';
     DocumentExtractorService,
     DocumentProcessingQueueService,
     DocumentAssistantService,
+    CanonicalShipmentService,
+    DocumentGenerationService,
+    DocxTemplateRenderer,
+    TemplatePdfRenderer,
+    DocumentTemplateRegistry,
   ],
-  exports: [DocumentIntelligenceService, DocumentAssistantService],
+  exports: [
+    DocumentIntelligenceService,
+    DocumentAssistantService,
+    DocumentGenerationService,
+  ],
 })
 export class DocumentsModule {}

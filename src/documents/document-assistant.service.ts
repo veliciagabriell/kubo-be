@@ -1,8 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { Container } from '../matching/entities/container.entity';
@@ -72,7 +68,6 @@ const DEFAULT_PRIORITY: FieldSourceType[] = [
 const external = (canonicalKey: string, message: string): FieldMapping => ({
   canonicalKey,
   externalMessage: message,
-  externalPlaceholder: message,
 });
 
 const DEFINITIONS: Record<DocumentType, AssistantDefinition> = {
@@ -134,6 +129,7 @@ const DEFINITIONS: Record<DocumentType, AssistantDefinition> = {
   [DocumentType.COMMERCIAL_INVOICE]: {
     fields: {
       dateOfExportation: { canonicalKey: 'invoice_date' },
+      invoiceNumber: { canonicalKey: 'invoice_number' },
       airwaybillNo: external('airwaybill_number', 'Available after booking'),
       shipperNameAddress: { canonicalKey: 'exporter_name_address' },
       consigneeNameAddress: { canonicalKey: 'consignee_name_address' },
@@ -471,7 +467,11 @@ export class DocumentAssistantService {
     const supplied = dto.fields ?? {};
     const fields: Record<string, string> = {};
     const item: Record<string, string> = {};
-    const unresolved: string[] = [];
+    const unresolved: Array<{
+      key: string;
+      label: string;
+      requirement: 'required_before_generation';
+    }> = [];
 
     for (const field of result.fields) {
       const suppliedValue = (
@@ -480,30 +480,53 @@ export class DocumentAssistantService {
       const mapping = this.mappingFor(type, field.key);
       const value = suppliedValue || field.value || mapping.externalPlaceholder;
       if (field.required && !value && field.status !== 'waiting_external_data')
-        unresolved.push(field.label);
+        unresolved.push({
+          key: field.canonicalKey,
+          label: field.label,
+          requirement: 'required_before_generation',
+        });
       if (field.required && field.status === 'conflict' && !suppliedValue)
-        unresolved.push(`${field.label} (conflict)`);
+        unresolved.push({
+          key: field.canonicalKey,
+          label: `${field.label} (conflict)`,
+          requirement: 'required_before_generation',
+        });
       if (
         field.required &&
         field.status === 'needs_confirmation' &&
         !suppliedValue
       )
-        unresolved.push(`${field.label} (confirmation required)`);
+        unresolved.push({
+          key: field.canonicalKey,
+          label: `${field.label} (confirmation required)`,
+          requirement: 'required_before_generation',
+        });
       if (field.key.startsWith('item:')) item[field.key.slice(5)] = value ?? '';
       else fields[field.key] = value ?? '';
     }
     if (unresolved.length)
-      throw new BadRequestException(
-        `Resolve required information first: ${[...new Set(unresolved)].join(', ')}`,
-      );
+      return {
+        status: 'additional_information_required' as const,
+        missingFields: [
+          ...new Map(unresolved.map((field) => [field.key, field])).values(),
+        ],
+      };
 
     const schema = DOCUMENT_SCHEMAS[type];
-    const generated = await this.documentsService.createDocument(userId, {
+    const createDto = {
       type,
       shipmentId: knowledge.shipment.id,
       fields,
       items: schema.itemsSchema ? [item] : undefined,
-    });
+    };
+    const templateResult =
+      await this.documentsService.generateTemplateDocument?.(userId, createDto);
+    if (templateResult?.status === 'additional_information_required')
+      return templateResult;
+    const generated =
+      templateResult?.status === 'draft_generated'
+        ? templateResult.document
+        : await this.documentsService.createDocument(userId, createDto);
     return {
       ...generated,
       generatedSources: generated.generatedSources

@@ -19,6 +19,7 @@ import {
 } from './entities/document.entity';
 import { ShipmentFact } from './entities/shipment-fact.entity';
 import { Shipment } from '../shipments/entities/shipment.entity';
+import { DocumentGenerationService } from './generation/document-generation.service';
 
 export interface FieldDef {
   key: string;
@@ -163,6 +164,7 @@ export const DOCUMENT_SCHEMAS: Record<DocumentType, DocumentSchemaDef> = {
         label: 'Date of Exportation',
         required: true,
       },
+      { key: 'invoiceNumber', label: 'Invoice Number', required: true },
       { key: 'airwaybillNo', label: 'Airwaybill No.', required: false },
       {
         key: 'shipperNameAddress',
@@ -403,6 +405,8 @@ export class DocumentsService {
     @Optional()
     @InjectRepository(Shipment)
     private readonly shipmentRepo?: Repository<Shipment>,
+    @Optional()
+    private readonly generationService?: DocumentGenerationService,
   ) {}
 
   getDocumentTypes() {
@@ -411,6 +415,18 @@ export class DocumentsService {
       label: schema.label,
       category: schema.category,
     }));
+  }
+
+  async generateTemplateDocument(userId: string, dto: CreateDocumentDto) {
+    if (!dto.shipmentId || !this.generationService)
+      throw new BadRequestException('Template generation requires shipmentId');
+    return this.generationService.generateDocument(
+      dto.shipmentId,
+      userId,
+      dto.type,
+      dto.fields,
+      dto.items,
+    );
   }
 
   getDocumentSchema(type: DocumentType) {
@@ -426,6 +442,31 @@ export class DocumentsService {
     const schema = DOCUMENT_SCHEMAS[dto.type];
     if (!schema)
       throw new NotFoundException(`Document type ${dto.type} not found`);
+
+    if (
+      dto.shipmentId &&
+      this.generationService &&
+      [
+        DocumentType.BILL_OF_LADING,
+        DocumentType.CERTIFICATE_OF_ORIGIN,
+        DocumentType.COMMERCIAL_INVOICE,
+        DocumentType.PACKING_LIST,
+      ].includes(dto.type)
+    ) {
+      const result = await this.generationService.generateDocument(
+        dto.shipmentId,
+        userId,
+        dto.type,
+        dto.fields,
+        dto.items,
+      );
+      if (result.status === 'additional_information_required')
+        throw new BadRequestException({
+          status: result.status,
+          missingFields: result.missingFields,
+        });
+      return result.document;
+    }
 
     const fields = await this.mergeReusableFields(userId, dto);
     this.validateRequiredFields(schema, fields);

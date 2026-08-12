@@ -53,6 +53,7 @@ const VALID_FIELDS: Record<DocumentType, Record<string, string>> = {
   },
   [DocumentType.COMMERCIAL_INVOICE]: {
     dateOfExportation: '01/08/26',
+    invoiceNumber: 'INV-2026-001',
     shipperNameAddress: 'Batik Nusantara, Bandung',
     consigneeNameAddress: 'Tokyo Trading Co., Tokyo',
     countryOfExport: 'Indonesia',

@@ -5,6 +5,7 @@ COPY package.json package-lock.json ./
 RUN npm ci
 COPY nest-cli.json tsconfig.json tsconfig.build.json ./
 COPY src ./src
+COPY uploads/documents/templates ./document-templates
 RUN npm run build && npm prune --omit=dev
 
 FROM node:22-bookworm-slim AS runtime
@@ -16,6 +17,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
+COPY --from=build /app/document-templates ./document-templates
 COPY package.json ./
 
 RUN mkdir -p /app/data /app/uploads/source-documents \
