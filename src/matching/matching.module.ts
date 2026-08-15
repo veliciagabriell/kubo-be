@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { User } from '../users/entities/user.entity';
 import { Vessel } from '../vessels/entities/vessel.entity';
 import { Voyage } from '../vessels/entities/voyage.entity';
 import { AiMatchingService } from './ai-matching.service';
@@ -15,7 +16,7 @@ import { MatchingService } from './matching.service';
   // VesselsModule itself, container creation/updates are driven by
   // `voyage.*`/`vessel.*` events instead (see MatchingService), keeping the
   // two modules decoupled.
-  imports: [TypeOrmModule.forFeature([Container, Vessel, Voyage])],
+  imports: [TypeOrmModule.forFeature([Container, Vessel, Voyage, User])],
   controllers: [MatchingController],
   providers: [
     MatchingService,

@@ -1,6 +1,8 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import * as bcrypt from 'bcrypt';
 import { Repository } from 'typeorm';
+import { User } from '../users/entities/user.entity';
 import { Vessel } from '../vessels/entities/vessel.entity';
 import { Voyage, VoyageStatus } from '../vessels/entities/voyage.entity';
 import { getPortZone } from '../vessels/lib/geo';
@@ -54,6 +56,16 @@ const FIXTURES: FixtureDefinition[] = [
   },
 ];
 
+const DEVELOPMENT_FORWARDER_ACCOUNT = {
+  email: 'forwarder@kubo.dev',
+  password: 'Password123!',
+  name: 'KUBO Dev Forwarder',
+  businessName: 'KUBO DEV NUSANTARA',
+  businessType: 'Freight Forwarder',
+  ownerAddress: 'Tanjung Emas, Semarang, Indonesia',
+  businessAddress: 'Tanjung Emas, Semarang, Indonesia',
+} as const;
+
 function envFlag(name: string): boolean {
   return ['1', 'true', 'yes', 'on'].includes(
     (process.env[name] ?? '').trim().toLowerCase(),
@@ -89,6 +101,8 @@ export class DevelopmentMatchingFixtureService implements OnModuleInit {
     private readonly voyageRepo: Repository<Voyage>,
     @InjectRepository(Container)
     private readonly containerRepo: Repository<Container>,
+    @InjectRepository(User)
+    private readonly userRepo: Repository<User>,
   ) {}
 
   async onModuleInit() {
@@ -109,16 +123,49 @@ export class DevelopmentMatchingFixtureService implements OnModuleInit {
       ? Math.min(180, Math.max(1, Math.round(configuredBaseDays)))
       : 14;
 
+    const freightForwarder = await this.seedFreightForwarderAccount();
     for (const definition of FIXTURES) {
-      await this.upsertFixture(definition, baseDays);
+      await this.upsertFixture(definition, baseDays, freightForwarder.id);
     }
 
     this.logger.warn(
-      `Development matching fixtures active: ${FIXTURES.length} non-AIS container candidates are available`,
+      `Development matching fixtures active: ${FIXTURES.length} non-AIS container candidates and the ${DEVELOPMENT_FORWARDER_ACCOUNT.businessName} forwarder account are available`,
     );
   }
 
-  private async upsertFixture(definition: FixtureDefinition, baseDays: number) {
+  private async seedFreightForwarderAccount(): Promise<User> {
+    const email = (
+      process.env.MATCHING_FIXTURE_FORWARDER_EMAIL ??
+      DEVELOPMENT_FORWARDER_ACCOUNT.email
+    )
+      .trim()
+      .toLowerCase();
+    const existing = await this.userRepo.findOneBy({ email });
+    if (existing) return existing;
+
+    const password =
+      process.env.MATCHING_FIXTURE_FORWARDER_PASSWORD ??
+      DEVELOPMENT_FORWARDER_ACCOUNT.password;
+    const passwordHash = await bcrypt.hash(password, 12);
+
+    return this.userRepo.save(
+      this.userRepo.create({
+        name: DEVELOPMENT_FORWARDER_ACCOUNT.name,
+        email,
+        password: passwordHash,
+        businessName: DEVELOPMENT_FORWARDER_ACCOUNT.businessName,
+        businessType: DEVELOPMENT_FORWARDER_ACCOUNT.businessType,
+        ownerAddress: DEVELOPMENT_FORWARDER_ACCOUNT.ownerAddress,
+        businessAddress: DEVELOPMENT_FORWARDER_ACCOUNT.businessAddress,
+      }),
+    );
+  }
+
+  private async upsertFixture(
+    definition: FixtureDefinition,
+    baseDays: number,
+    freightForwarderId: string,
+  ) {
     const now = new Date();
     const origin = getPortZone(definition.originPortId)!;
     const destination = getPortZone(definition.destinationPortId)!;
@@ -194,6 +241,7 @@ export class DevelopmentMatchingFixtureService implements OnModuleInit {
         dataSource: 'development_fixture',
         voyageId: definition.voyageId,
         vesselMmsi: definition.vesselMmsi,
+        freightForwarderId,
         destinationCountry: 'Japan',
         destinationCity: destination.label,
         destinationConfidence: 'development_fixture',

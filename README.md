@@ -151,6 +151,8 @@ Aktifkan fixture hanya pada development dengan nilai berikut di `.env`:
 APP_ENV=development
 MATCHING_FIXTURE_ENABLED=true
 MATCHING_FIXTURE_DEPARTURE_DAYS=14
+MATCHING_FIXTURE_FORWARDER_EMAIL=forwarder@kubo.dev
+MATCHING_FIXTURE_FORWARDER_PASSWORD=Password123!
 ```
 
 Kemudian rebuild API:
@@ -160,7 +162,14 @@ docker compose --env-file .env -f infrastructure/docker-compose.yml up -d --buil
 ```
 
 Mode ini membuat tiga vessel, voyage, dan container deterministik untuk menguji
-matching, Gemini re-ranking, checkout/order, shipment, dokumen, dan OCR. Semua
+matching, Gemini re-ranking, checkout/order, shipment, dokumen, dan OCR. Mode ini
+juga membuat akun Freight Forwarder `KUBO DEV NUSANTARA` yang dapat digunakan
+melalui pilihan **Freight Forwarder** pada halaman login:
+
+- Email: `forwarder@kubo.dev`
+- Password: `Password123!`
+
+Semua
 record ditandai `dataSource: "development_fixture"` dan penjelasan tanggal/biaya
 menyatakan bahwa nilainya bukan data AIS. Fixture ditolak kecuali `APP_ENV`
 bernilai `development` atau `test`; jangan aktifkan flag ini pada deployment.

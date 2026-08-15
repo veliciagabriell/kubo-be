@@ -3,7 +3,10 @@ import {
   Column,
   PrimaryGeneratedColumn,
   CreateDateColumn,
+  JoinColumn,
+  ManyToOne,
 } from 'typeorm';
+import { User } from '../../users/entities/user.entity';
 
 export enum ContainerType {
   TWENTY_FT = '20ft',
@@ -45,6 +48,13 @@ export class Container {
 
   @Column({ name: 'vessel_mmsi' })
   vesselMmsi: string;
+
+  @Column({ name: 'freight_forwarder_id', type: 'varchar', nullable: true })
+  freightForwarderId: string | null;
+
+  @ManyToOne(() => User, { nullable: true })
+  @JoinColumn({ name: 'freight_forwarder_id' })
+  freightForwarder: User | null;
 
   @Column({ name: 'destination_country', default: 'Japan' })
   destinationCountry: string;

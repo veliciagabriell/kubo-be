@@ -16,6 +16,7 @@ import { ShipmentsModule } from './shipments/shipments.module';
 import { User } from './users/entities/user.entity';
 import { ExtractedField } from './documents/entities/extracted-field.entity';
 import { ShipmentFact } from './documents/entities/shipment-fact.entity';
+import { ForwarderModule } from './forwarder/forwarder.module';
 import { UsersModule } from './users/users.module';
 import { Vessel } from './vessels/entities/vessel.entity';
 import { Voyage } from './vessels/entities/voyage.entity';
@@ -48,6 +49,7 @@ import { VesselsModule } from './vessels/vessels.module';
     MatchingModule,
     OrdersModule,
     ShipmentsModule,
+    ForwarderModule,
   ],
   controllers: [AppController],
   providers: [AppService],

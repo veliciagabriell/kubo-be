@@ -1,4 +1,5 @@
 import { Repository } from 'typeorm';
+import { User } from '../users/entities/user.entity';
 import { Vessel } from '../vessels/entities/vessel.entity';
 import { Voyage } from '../vessels/entities/voyage.entity';
 import { DevelopmentMatchingFixtureService } from './development-matching-fixture.service';
@@ -16,6 +17,9 @@ describe('DevelopmentMatchingFixtureService', () => {
   let containerRepo: jest.Mocked<
     Pick<Repository<Container>, 'findOneBy' | 'create' | 'save'>
   >;
+  let userRepo: jest.Mocked<
+    Pick<Repository<User>, 'findOneBy' | 'create' | 'save'>
+  >;
   let service: DevelopmentMatchingFixtureService;
 
   beforeEach(() => {
@@ -27,10 +31,12 @@ describe('DevelopmentMatchingFixtureService', () => {
     vesselRepo = repository();
     voyageRepo = repository();
     containerRepo = repository();
+    userRepo = repository();
     service = new DevelopmentMatchingFixtureService(
       vesselRepo as unknown as Repository<Vessel>,
       voyageRepo as unknown as Repository<Voyage>,
       containerRepo as unknown as Repository<Container>,
+      userRepo as unknown as Repository<User>,
     );
   });
 
@@ -51,6 +57,14 @@ describe('DevelopmentMatchingFixtureService', () => {
     expect(vesselRepo.save).toHaveBeenCalledTimes(3);
     expect(voyageRepo.save).toHaveBeenCalledTimes(3);
     expect(containerRepo.save).toHaveBeenCalledTimes(3);
+    expect(userRepo.save).toHaveBeenCalledTimes(1);
+    expect(userRepo.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        email: 'forwarder@kubo.dev',
+        businessName: 'KUBO DEV NUSANTARA',
+        businessType: 'Freight Forwarder',
+      }),
+    );
     expect(containerRepo.create).toHaveBeenCalledWith(
       expect.objectContaining({
         dataSource: 'development_fixture',
@@ -68,5 +82,6 @@ describe('DevelopmentMatchingFixtureService', () => {
     expect(vesselRepo.save).not.toHaveBeenCalled();
     expect(voyageRepo.save).not.toHaveBeenCalled();
     expect(containerRepo.save).not.toHaveBeenCalled();
+    expect(userRepo.save).not.toHaveBeenCalled();
   });
 });
