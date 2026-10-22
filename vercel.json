@@ -1,7 +1,0 @@
-{
-  "functions": {
-    "src/main.ts": {
-      "maxDuration": 300
-    }
-  }
-}
