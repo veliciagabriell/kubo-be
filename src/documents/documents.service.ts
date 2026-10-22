@@ -8,7 +8,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { mkdirSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { Repository } from 'typeorm';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 import { generateDocumentDocx } from './docx-generator';
 import { generateDraftPdf } from './pdf-generator';
 import { CreateDocumentDto } from './dto/create-document.dto';
@@ -505,7 +505,7 @@ export class DocumentsService {
       }
       this.validateItems(schema, dto.items);
       const buffer = await generateDocumentDocx(dto.type, fields, dto.items);
-      const docxFilename = `${dto.type.toLowerCase()}-${shipmentLabel}-DRAFT-${uuidv4()}.docx`;
+      const docxFilename = `${dto.type.toLowerCase()}-${shipmentLabel}-DRAFT-${randomUUID()}.docx`;
       if (this.storage) {
         docxFileUrl = await this.storage.upload(
           `users/${userId}/shipments/${dto.shipmentId ?? 'unassigned'}/generated-documents/${docxFilename}`,
@@ -535,7 +535,7 @@ export class DocumentsService {
         sources: generatedSources,
       },
     );
-    const pdfFilename = `${dto.type.toLowerCase()}-${shipmentLabel}-DRAFT-${uuidv4()}.pdf`;
+    const pdfFilename = `${dto.type.toLowerCase()}-${shipmentLabel}-DRAFT-${randomUUID()}.pdf`;
     try {
       if (this.storage) {
         fileUrl = await this.storage.upload(
@@ -565,7 +565,7 @@ export class DocumentsService {
       docxFileUrl,
       documentOrigin: DocumentOrigin.GENERATED,
       templateVersion,
-      shipmentSnapshotId: uuidv4(),
+      shipmentSnapshotId: randomUUID(),
       generatedAt,
       generatedBy: userId,
       generatedSources: JSON.stringify(generatedSources),

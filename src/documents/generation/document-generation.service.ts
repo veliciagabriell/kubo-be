@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 import { SupabaseStorageService } from '../../supabase/supabase-storage.service';
 import { CanonicalShipmentService } from '../canonical/canonical-shipment.service';
 import {
@@ -82,7 +82,7 @@ export class DocumentGenerationService {
       order: { fileVersion: 'DESC' },
     });
     const fileVersion = (latest?.fileVersion ?? 0) + 1;
-    const snapshotId = uuidv4();
+    const snapshotId = randomUUID();
     const safeShipment = canonical.shipmentCode.replace(/[^A-Za-z0-9_-]/g, '_');
     const baseName = `${type.toLowerCase()}-${safeShipment}-DRAFT-v${fileVersion}-${snapshotId.slice(0, 8)}`;
     const docxName = `${baseName}.docx`;
