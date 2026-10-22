@@ -8,6 +8,7 @@ import { isLargeCargoVessel } from './lib/vessel-classification';
 
 export interface VesselView {
   mmsi: string;
+  dataSource: 'live_ais' | 'development_fixture';
   imo: string | null;
   name: string | null;
   callsign: string | null;
@@ -31,6 +32,7 @@ export interface VesselView {
 
 export interface VoyageView {
   id: string;
+  dataSource: 'live_ais' | 'development_fixture';
   originPort: string;
   destinationPort: string | null;
   destinationConfidence: string | null;
@@ -50,9 +52,16 @@ export class VesselsService {
 
   /** Only real, confirmed ocean-going cargo ships - see isLargeCargoVessel. */
   async listVessels(): Promise<VesselView[]> {
-    const vessels = await this.vesselRepo.find({ order: { lastPositionAt: 'DESC' } });
+    const vessels = await this.vesselRepo.find({
+      order: { lastPositionAt: 'DESC' },
+    });
     return vessels
-      .filter((v) => isLargeCargoVessel({ shipTypeCode: v.shipTypeCode, lengthM: v.lengthM }))
+      .filter((v) =>
+        isLargeCargoVessel({
+          shipTypeCode: v.shipTypeCode,
+          lengthM: v.lengthM,
+        }),
+      )
       .map((v) => this.toVesselView(v));
   }
 
@@ -63,7 +72,9 @@ export class VesselsService {
   }
 
   async listVoyages(): Promise<VoyageView[]> {
-    const voyages = await this.voyageRepo.find({ order: { createdAt: 'DESC' } });
+    const voyages = await this.voyageRepo.find({
+      order: { createdAt: 'DESC' },
+    });
     return Promise.all(voyages.map((v) => this.toVoyageView(v)));
   }
 
@@ -76,6 +87,7 @@ export class VesselsService {
   private toVesselView(v: Vessel): VesselView {
     return {
       mmsi: v.mmsi,
+      dataSource: v.dataSource,
       imo: v.imo,
       name: v.name,
       callsign: v.callsign,
@@ -91,7 +103,10 @@ export class VesselsService {
       fullnessUpdatedAt: v.lastStaticDataAt,
       lastDestinationRaw: v.lastDestinationRaw,
       lastEtaRaw: v.lastEtaRaw,
-      estimatedLocation: v.lastLat != null && v.lastLon != null ? estimateLocationLabel(v.lastLat, v.lastLon) : null,
+      estimatedLocation:
+        v.lastLat != null && v.lastLon != null
+          ? estimateLocationLabel(v.lastLat, v.lastLon)
+          : null,
       lastSpeedKn: v.lastSpeedKn,
       lastCourseDeg: v.lastCourseDeg,
       lastPositionAt: v.lastPositionAt,
@@ -102,6 +117,7 @@ export class VesselsService {
     const vessel = await this.vesselRepo.findOneBy({ mmsi: v.vesselMmsi });
     return {
       id: v.id,
+      dataSource: v.dataSource,
       originPort: v.originPortLabel,
       destinationPort: v.destinationPortLabel,
       destinationConfidence: v.destinationConfidence,

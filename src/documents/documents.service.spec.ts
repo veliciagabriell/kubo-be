@@ -2,13 +2,22 @@ import { BadRequestException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { TypeOrmModule, getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { existsSync, rmSync, statSync } from 'fs';
+import {
+  existsSync,
+  readFileSync,
+  readdirSync,
+  statSync,
+  unlinkSync,
+} from 'fs';
 import { join } from 'path';
 import { Document, DocumentType } from './entities/document.entity';
 import { DocumentsService } from './documents.service';
 import { User } from '../users/entities/user.entity';
 
 const UPLOAD_DIR = join(process.cwd(), 'uploads', 'documents');
+const EXISTING_UPLOADS = new Set(
+  existsSync(UPLOAD_DIR) ? readdirSync(UPLOAD_DIR) : [],
+);
 
 const VALID_FIELDS: Record<DocumentType, Record<string, string>> = {
   [DocumentType.SVLK]: {
@@ -44,6 +53,7 @@ const VALID_FIELDS: Record<DocumentType, Record<string, string>> = {
   },
   [DocumentType.COMMERCIAL_INVOICE]: {
     dateOfExportation: '01/08/26',
+    invoiceNumber: 'INV-2026-001',
     shipperNameAddress: 'Batik Nusantara, Bandung',
     consigneeNameAddress: 'Tokyo Trading Co., Tokyo',
     countryOfExport: 'Indonesia',
@@ -57,6 +67,8 @@ const VALID_FIELDS: Record<DocumentType, Record<string, string>> = {
     consigneeCompanyAddress: 'Tokyo Trading Co., Tokyo',
     consigneeCountry: 'Japan',
     shipDate: '01/08/26',
+    hsCode: '520819',
+    totalVolume: '1.8',
     totalGrossWeight: '50 KG',
     signatureNameTitleDate: 'Adi Wijaya, Owner, 01/08/26',
   },
@@ -66,16 +78,29 @@ const VALID_FIELDS: Record<DocumentType, Record<string, string>> = {
     shipFromNameAddress: 'Batik Nusantara, Bandung',
     shipToNameAddress: 'Tokyo Trading Co., Tokyo',
     carrierName: 'Maersk',
+    portOfLoading: 'Tanjung Priok',
+    portOfDischarge: 'Tokyo',
+    measurementCbm: '1.8',
     freightChargeTerms: 'Prepaid',
   },
 };
 
 const VALID_ITEMS: Partial<Record<DocumentType, Record<string, string>[]>> = {
   [DocumentType.CERTIFICATE_OF_ORIGIN]: [
-    { goodsDescription: 'Batik Fabric', hsCode: '520819', countryOfOrigin: 'Indonesia' },
+    {
+      goodsDescription: 'Batik Fabric',
+      hsCode: '520819',
+      countryOfOrigin: 'Indonesia',
+    },
   ],
   [DocumentType.COMMERCIAL_INVOICE]: [
-    { noOfPkgs: '1', goodsDescription: 'Batik Fabric', qty: '100', unitValue: '5', totalValue: '500' },
+    {
+      noOfPkgs: '1',
+      goodsDescription: 'Batik Fabric',
+      qty: '100',
+      unitValue: '5',
+      totalValue: '500',
+    },
   ],
   [DocumentType.PACKING_LIST]: [
     {
@@ -144,7 +169,11 @@ describe('DocumentsService', () => {
   afterAll(async () => {
     await module.close();
     if (existsSync(UPLOAD_DIR)) {
-      rmSync(UPLOAD_DIR, { recursive: true, force: true });
+      for (const fileName of readdirSync(UPLOAD_DIR)) {
+        if (!EXISTING_UPLOADS.has(fileName)) {
+          unlinkSync(join(UPLOAD_DIR, fileName));
+        }
+      }
     }
   });
 
@@ -189,41 +218,61 @@ describe('DocumentsService', () => {
     DocumentType.COMMERCIAL_INVOICE,
     DocumentType.PACKING_LIST,
     DocumentType.BILL_OF_LADING,
-  ])('generates a real, non-empty .docx file for %s and persists it', async (type) => {
-    const created = await service.createDocument('user-1', {
-      type,
-      fields: VALID_FIELDS[type],
-      items: VALID_ITEMS[type],
-    });
+  ])(
+    'generates real PDF and DOCX drafts for %s and persists them',
+    async (type) => {
+      const created = await service.createDocument('user-1', {
+        type,
+        fields: VALID_FIELDS[type],
+        items: VALID_ITEMS[type],
+      });
 
-    expect(created.fileUrl).toMatch(/^\/uploads\/documents\/.+\.docx$/);
-    expect(created.generatedContent).toBeNull();
-    expect(created.fields).toEqual(VALID_FIELDS[type]);
-    expect(created.items).toEqual(VALID_ITEMS[type]);
+      expect(created.fileUrl).toMatch(/^\/uploads\/documents\/.+\.pdf$/);
+      expect(created.docxFileUrl).toMatch(/^\/uploads\/documents\/.+\.docx$/);
+      expect(created.generatedContent).toBeNull();
+      expect(created.status).toBe('draft_generated');
+      expect(created.documentOrigin).toBe('generated');
+      expect(created.templateVersion).toBe('1.0.0');
+      expect(created.fields).toEqual(VALID_FIELDS[type]);
+      expect(created.items).toEqual(VALID_ITEMS[type]);
 
-    const absolutePath = join(process.cwd(), created.fileUrl!.replace(/^\//, ''));
-    expect(existsSync(absolutePath)).toBe(true);
-    // A real .docx is a zip archive; PK\x03\x04 is the zip local-file-header magic.
-    const buffer = require('fs').readFileSync(absolutePath) as Buffer;
-    expect(buffer.subarray(0, 4).toString('hex')).toBe('504b0304');
-    expect(statSync(absolutePath).size).toBeGreaterThan(1000);
+      const absolutePath = join(
+        process.cwd(),
+        created.fileUrl!.replace(/^\//, ''),
+      );
+      expect(existsSync(absolutePath)).toBe(true);
+      const pdfBuffer = readFileSync(absolutePath);
+      expect(pdfBuffer.subarray(0, 5).toString()).toBe('%PDF-');
+      expect(statSync(absolutePath).size).toBeGreaterThan(1000);
 
-    const fetched = await service.getDocumentById(created.id, 'user-1');
-    expect(fetched.type).toBe(type);
-    expect(fetched.fields).toEqual(VALID_FIELDS[type]);
-  });
+      const docxPath = join(
+        process.cwd(),
+        created.docxFileUrl!.replace(/^\//, ''),
+      );
+      const docxBuffer = readFileSync(docxPath);
+      expect(docxBuffer.subarray(0, 4).toString('hex')).toBe('504b0304');
+      expect(statSync(docxPath).size).toBeGreaterThan(1000);
 
-  it('generates legacy text content (no docx) for SVLK and PEB', async () => {
+      const fetched = await service.getDocumentById(created.id, 'user-1');
+      expect(fetched.type).toBe(type);
+      expect(fetched.fields).toEqual(VALID_FIELDS[type]);
+    },
+  );
+
+  it('generates a PDF draft and keeps legacy preview content for SVLK', async () => {
     const created = await service.createDocument('user-1', {
       type: DocumentType.SVLK,
       fields: VALID_FIELDS[DocumentType.SVLK],
     });
 
-    expect(created.fileUrl).toBeNull();
-    expect(created.generatedContent).toContain('SERTIFIKAT SISTEM VERIFIKASI LEGALITAS KAYU');
+    expect(created.fileUrl).toMatch(/^\/uploads\/documents\/.+\.pdf$/);
+    expect(created.docxFileUrl).toBeNull();
+    expect(created.generatedContent).toContain(
+      'SERTIFIKAT SISTEM VERIFIKASI LEGALITAS KAYU',
+    );
   });
 
-  it('lists only the requesting user\'s documents, newest first', async () => {
+  it("lists only the requesting user's documents, newest first", async () => {
     await service.createDocument('user-2', {
       type: DocumentType.PEB,
       fields: VALID_FIELDS[DocumentType.PEB],

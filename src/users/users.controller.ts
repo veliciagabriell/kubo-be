@@ -14,9 +14,6 @@ import {
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
-import { diskStorage } from 'multer';
-import { extname } from 'path';
-import { v4 as uuidv4 } from 'uuid';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { User } from './entities/user.entity';
@@ -41,17 +38,11 @@ export class UsersController {
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(
     FileInterceptor('umkm_certificate', {
-      storage: diskStorage({
-        destination: './uploads',
-        filename: (_req, file, cb) => {
-          cb(null, `umkm-${uuidv4()}${extname(file.originalname)}`);
-        },
-      }),
       fileFilter: (_req, file, cb) => {
         const allowed = /\.(jpg|jpeg|png|pdf)$/i;
         cb(null, allowed.test(file.originalname));
       },
-      limits: { fileSize: 5 * 1024 * 1024 },
+      limits: { fileSize: 3 * 1024 * 1024 },
     }),
   )
   async updateProfile(
@@ -59,8 +50,7 @@ export class UsersController {
     @Body() dto: UpdateProfileDto,
     @UploadedFile() file?: Express.Multer.File,
   ) {
-    const certUrl = file ? `/uploads/${file.filename}` : undefined;
-    const updated = await this.usersService.updateProfile(user.id, dto, certUrl);
+    const updated = await this.usersService.updateProfile(user.id, dto, file);
     return { message: 'Profile updated successfully', data: updated };
   }
 }

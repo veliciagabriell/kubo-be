@@ -1,14 +1,24 @@
-import { Column, CreateDateColumn, Entity, PrimaryColumn, UpdateDateColumn } from 'typeorm';
+import {
+  Column,
+  CreateDateColumn,
+  Entity,
+  PrimaryColumn,
+  UpdateDateColumn,
+} from 'typeorm';
+import { dateColumnTransformer } from '../../common/typeorm/date-column.transformer';
 
 /**
- * A vessel tracked via live AIS (AISstream.io). Every field below is either
- * a direct pass-through of a received AIS message, or a labelled estimate
- * derived from real AIS fields (see *Justification columns) - never seeded.
+ * A vessel tracked via live AIS (AISstream.io), or an explicitly labelled
+ * development fixture when MATCHING_FIXTURE_ENABLED is active. dataSource
+ * prevents fixture values from being mistaken for live AIS observations.
  */
 @Entity('vessels')
 export class Vessel {
   @PrimaryColumn({ type: 'varchar' })
   mmsi: string;
+
+  @Column({ name: 'data_source', type: 'varchar', default: 'live_ais' })
+  dataSource: 'live_ais' | 'development_fixture';
 
   @Column({ type: 'varchar', nullable: true })
   imo: string | null;
@@ -37,7 +47,11 @@ export class Vessel {
   @Column({ name: 'estimated_capacity_cbm', type: 'real', nullable: true })
   estimatedCapacityCbm: number | null;
 
-  @Column({ name: 'capacity_estimate_justification', type: 'text', nullable: true })
+  @Column({
+    name: 'capacity_estimate_justification',
+    type: 'text',
+    nullable: true,
+  })
   capacityEstimateJustification: string | null;
 
   @Column({ name: 'min_draught_m', type: 'real', nullable: true })
@@ -76,11 +90,21 @@ export class Vessel {
   @Column({ name: 'last_course_deg', type: 'real', nullable: true })
   lastCourseDeg: number | null;
 
-  @Column({ name: 'last_position_at', type: 'datetime', nullable: true })
+  @Column({
+    name: 'last_position_at',
+    type: 'text',
+    nullable: true,
+    transformer: dateColumnTransformer,
+  })
   lastPositionAt: Date | null;
 
   /** When ShipStaticData was last received for this vessel - distinct from lastPositionAt, since capacity/fullness only refresh from static messages. */
-  @Column({ name: 'last_static_data_at', type: 'datetime', nullable: true })
+  @Column({
+    name: 'last_static_data_at',
+    type: 'text',
+    nullable: true,
+    transformer: dateColumnTransformer,
+  })
   lastStaticDataAt: Date | null;
 
   @CreateDateColumn({ name: 'first_seen_at' })

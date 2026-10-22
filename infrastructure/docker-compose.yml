@@ -1,0 +1,100 @@
+name: kubo
+
+services:
+  redis:
+    image: redis:7.4-alpine
+    command: ['redis-server', '--appendonly', 'yes']
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  document-ai-service:
+    build:
+      context: ../services/document-ai-service
+    environment:
+      DOCUMENT_MAX_BYTES: 26214400
+      DOCUMENT_MAX_PAGES: 100
+      DOCLING_DOCUMENT_TIMEOUT: 240
+    ports:
+      - '8000:8000'
+    volumes:
+      - docling-model-cache:/root/.cache
+    healthcheck:
+      test: ['CMD', 'curl', '--fail', 'http://localhost:8000/health']
+      interval: 15s
+      timeout: 5s
+      start_period: 90s
+      retries: 10
+    restart: unless-stopped
+
+  kubo-api:
+    build:
+      context: ..
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      PORT: 3001
+      DB_PATH: /app/data/kubo.db
+      DATABASE_URL: ${DATABASE_URL:-}
+      DATABASE_SSL: ${DATABASE_SSL:-true}
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-1}
+      DB_SYNCHRONIZE: ${DB_SYNCHRONIZE:-true}
+      SUPABASE_URL: ${SUPABASE_URL:-}
+      SUPABASE_PUBLISHABLE_KEY: ${SUPABASE_PUBLISHABLE_KEY:-}
+      SUPABASE_SECRET_KEY: ${SUPABASE_SECRET_KEY:-}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
+      SUPABASE_STORAGE_BUCKET: ${SUPABASE_STORAGE_BUCKET:-documents}
+      SUPABASE_SIGNED_URL_TTL_SECONDS: ${SUPABASE_SIGNED_URL_TTL_SECONDS:-300}
+      JWT_SECRET: ${JWT_SECRET:-change-me-for-non-local-use}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      REDIS_URL: redis://redis:6379/0
+      DOCUMENT_WORKER_CONCURRENCY: ${DOCUMENT_WORKER_CONCURRENCY:-2}
+      DOCUMENT_PARSER_PROVIDER: ${DOCUMENT_PARSER_PROVIDER:-docling}
+      DOCUMENT_INTELLIGENCE_URL: http://document-ai-service:8000
+      DOCUMENT_INTELLIGENCE_TIMEOUT_MS: ${DOCUMENT_INTELLIGENCE_TIMEOUT_MS:-300000}
+      DOCUMENT_TEMPLATE_DIR: /app/document-templates
+      API_BASE_URL: ${API_BASE_URL:-}
+      QSTASH_URL: ${QSTASH_URL:-}
+      QSTASH_TOKEN: ${QSTASH_TOKEN:-}
+      QSTASH_CURRENT_SIGNING_KEY: ${QSTASH_CURRENT_SIGNING_KEY:-}
+      QSTASH_NEXT_SIGNING_KEY: ${QSTASH_NEXT_SIGNING_KEY:-}
+      AISSTREAM_API_KEY: ${AISSTREAM_API_KEY:-}
+      AISSTREAM_ENABLED: ${AISSTREAM_ENABLED:-true}
+      AISSTREAM_WATCHDOG_TIMEOUT_MS: ${AISSTREAM_WATCHDOG_TIMEOUT_MS:-60000}
+      AISSTREAM_RATE_LIMIT_COOLDOWN_MS: ${AISSTREAM_RATE_LIMIT_COOLDOWN_MS:-300000}
+      MATCHING_FIXTURE_ENABLED: ${MATCHING_FIXTURE_ENABLED:-false}
+      MATCHING_FIXTURE_DEPARTURE_DAYS: ${MATCHING_FIXTURE_DEPARTURE_DAYS:-14}
+      MATCHING_FIXTURE_FORWARDER_EMAIL: ${MATCHING_FIXTURE_FORWARDER_EMAIL:-forwarder@kubo.dev}
+      MATCHING_FIXTURE_FORWARDER_PASSWORD: ${MATCHING_FIXTURE_FORWARDER_PASSWORD:-Password123!}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-}
+      GEMINI_OCR_MODEL: ${GEMINI_OCR_MODEL:-gemini-flash-latest}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-}
+    ports:
+      - '3001:3001'
+    volumes:
+      - kubo-data:/app/data
+      - kubo-uploads:/app/uploads
+    depends_on:
+      redis:
+        condition: service_healthy
+      document-ai-service:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'curl', '--fail', 'http://localhost:3001/api/v1/health']
+      interval: 15s
+      timeout: 5s
+      start_period: 20s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  redis-data:
+  docling-model-cache:
+  kubo-data:
+  kubo-uploads:

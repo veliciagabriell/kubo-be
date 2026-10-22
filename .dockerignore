@@ -1,0 +1,14 @@
+.git
+.github
+.env
+node_modules
+dist
+coverage
+kubo.db
+uploads/*
+!uploads/documents/
+uploads/documents/*
+!uploads/documents/templates/
+!uploads/documents/templates/*.docx
+ref
+*.log
