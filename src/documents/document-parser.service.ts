@@ -1,5 +1,6 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import { extname } from 'path';
 import {
   ParsedDocument,
@@ -8,22 +9,73 @@ import {
 
 @Injectable()
 export class DocumentParserService {
-  constructor(private readonly config: ConfigService) {}
+  private readonly geminiClient: GoogleGenerativeAI | null;
+  private readonly geminiModel: string;
+
+  constructor(private readonly config: ConfigService) {
+    const key =
+      this.config.get<string>('GEMINI_API_KEY') ||
+      this.config.get<string>('GOOGLE_API_KEY');
+    this.geminiClient = key ? new GoogleGenerativeAI(key) : null;
+    this.geminiModel =
+      this.config.get<string>('GEMINI_OCR_MODEL') ||
+      this.config.get<string>('GEMINI_MODEL') ||
+      'gemini-flash-latest';
+  }
+
+  getStatus() {
+    const provider = (
+      this.config.get<string>('DOCUMENT_PARSER_PROVIDER') ?? 'auto'
+    ).toLowerCase();
+    return {
+      provider,
+      ready:
+        provider === 'gemini'
+          ? this.geminiClient !== null
+          : provider === 'docling'
+            ? Boolean(this.config.get<string>('DOCUMENT_INTELLIGENCE_URL'))
+            : Boolean(
+                this.config.get<string>('DOCUMENT_INTELLIGENCE_URL') ||
+                this.geminiClient,
+              ),
+      model: provider === 'gemini' ? this.geminiModel : null,
+    };
+  }
 
   async parse(
     buffer: Buffer,
     fileName: string,
     mimeType: string,
   ): Promise<ParsedDocument> {
-    const endpoint = this.config.get<string>('DOCUMENT_INTELLIGENCE_URL');
-    if (endpoint)
-      return this.parseRemotely(endpoint, buffer, fileName, mimeType);
-
     const extension = extname(fileName).toLowerCase();
     if (extension === '.csv' || mimeType === 'text/csv') {
       const text = buffer.toString('utf8');
       return this.singleBlock(text, 'native-csv', false, true);
     }
+
+    const provider = (
+      this.config.get<string>('DOCUMENT_PARSER_PROVIDER') ?? 'auto'
+    ).toLowerCase();
+    const endpoint = this.config.get<string>('DOCUMENT_INTELLIGENCE_URL');
+    if (provider === 'gemini')
+      return this.parseWithGemini(buffer, fileName, mimeType);
+    if (provider === 'docling') {
+      if (!endpoint) {
+        throw new ServiceUnavailableException(
+          'DOCUMENT_PARSER_PROVIDER=docling memerlukan DOCUMENT_INTELLIGENCE_URL.',
+        );
+      }
+      return this.parseRemotely(endpoint, buffer, fileName, mimeType);
+    }
+    if (provider !== 'auto') {
+      throw new ServiceUnavailableException(
+        'DOCUMENT_PARSER_PROVIDER harus auto, gemini, atau docling.',
+      );
+    }
+    if (endpoint)
+      return this.parseRemotely(endpoint, buffer, fileName, mimeType);
+    if (this.geminiClient)
+      return this.parseWithGemini(buffer, fileName, mimeType);
 
     if (extension === '.pdf' || mimeType === 'application/pdf') {
       return this.parseSimplePdf(buffer);
@@ -32,6 +84,113 @@ export class DocumentParserService {
     throw new ServiceUnavailableException(
       'Format ini memerlukan Docling/PaddleOCR. Konfigurasikan DOCUMENT_INTELLIGENCE_URL.',
     );
+  }
+
+  private async parseWithGemini(
+    buffer: Buffer,
+    fileName: string,
+    mimeType: string,
+  ): Promise<ParsedDocument> {
+    if (!this.geminiClient) {
+      throw new ServiceUnavailableException(
+        'Gemini OCR belum dikonfigurasi. Isi GEMINI_API_KEY atau GOOGLE_API_KEY.',
+      );
+    }
+
+    const model = this.geminiClient.getGenerativeModel({
+      model: this.geminiModel,
+      generationConfig: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: 'object',
+          properties: {
+            text: { type: 'string' },
+            pages: { type: 'integer' },
+            hasTextLayer: { type: 'boolean' },
+            usedOcr: { type: 'boolean' },
+            blocks: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  text: { type: 'string' },
+                  pageNumber: { type: 'integer' },
+                },
+                required: ['text', 'pageNumber'],
+              },
+            },
+          },
+          required: ['text', 'pages', 'hasTextLayer', 'usedOcr', 'blocks'],
+        } as never,
+        maxOutputTokens: 8192,
+        temperature: 0,
+      },
+    });
+
+    const prompt = [
+      `Ekstrak seluruh teks dari dokumen bernama ${JSON.stringify(fileName)}.`,
+      'Pertahankan angka, kode, tanggal, nama pihak, alamat, tabel, satuan, dan nomor referensi secara akurat.',
+      'Jangan menerjemahkan, meringkas, memperbaiki, atau mengarang isi yang tidak terlihat.',
+      'Gabungkan seluruh teks ke field text dan pecah menjadi blocks berurutan dengan nomor halaman mulai dari 1.',
+      'Untuk gambar tunggal gunakan pages=1. hasTextLayer hanya true bila PDF memiliki teks digital; usedOcr true bila pembacaan visual diperlukan.',
+    ].join(' ');
+
+    try {
+      const result = await model.generateContent([
+        {
+          inlineData: {
+            data: buffer.toString('base64'),
+            mimeType,
+          },
+        },
+        { text: prompt },
+      ]);
+      const parsed = JSON.parse(
+        this.stripCodeFence(result.response.text()),
+      ) as {
+        text?: unknown;
+        pages?: unknown;
+        hasTextLayer?: unknown;
+        usedOcr?: unknown;
+        blocks?: Array<{ text?: unknown; pageNumber?: unknown }>;
+      };
+      if (typeof parsed.text !== 'string') {
+        throw new Error('respons tidak memiliki field text');
+      }
+      const pages =
+        typeof parsed.pages === 'number' && parsed.pages > 0
+          ? Math.floor(parsed.pages)
+          : 1;
+      const blocks = (parsed.blocks ?? [])
+        .filter((block) => typeof block.text === 'string' && block.text.trim())
+        .map((block) => ({
+          text: String(block.text).trim(),
+          pageNumber:
+            typeof block.pageNumber === 'number' && block.pageNumber > 0
+              ? Math.floor(block.pageNumber)
+              : null,
+          boundingBox: null,
+        }));
+      return {
+        text: parsed.text.trim(),
+        pages,
+        hasTextLayer: parsed.hasTextLayer === true,
+        usedOcr: parsed.usedOcr !== false,
+        parser: `gemini-${this.geminiModel}`,
+        blocks: blocks.length
+          ? blocks
+          : [
+              {
+                text: parsed.text.trim(),
+                pageNumber: 1,
+                boundingBox: null,
+              },
+            ],
+      };
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      throw new ServiceUnavailableException(`Gemini OCR gagal: ${reason}`);
+    }
   }
 
   private async parseRemotely(
@@ -149,5 +308,13 @@ export class DocumentParserService {
       usedOcr,
       blocks: [{ text, pageNumber: 1, boundingBox: null }],
     };
+  }
+
+  private stripCodeFence(value: string): string {
+    return value
+      .trim()
+      .replace(/^```(?:json)?\s*/i, '')
+      .replace(/```\s*$/i, '')
+      .trim();
   }
 }

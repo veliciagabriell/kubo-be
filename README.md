@@ -42,7 +42,7 @@ Alur:
 ```text
 PDF / image / DOCX / XLSX / CSV
   -> inspection + SHA-256 deduplication
-  -> Docling / PaddleOCR adapter
+  -> Gemini OCR (serverless) atau Docling adapter (Docker)
   -> deterministic classification and extraction
   -> extracted_fields + source provenance
   -> canonical shipment_facts
@@ -53,6 +53,8 @@ Endpoint utama:
 
 ```text
 POST  /api/v1/shipments/:shipmentId/documents     multipart: file, declaredDocumentType?
+POST  /api/v1/shipments/:shipmentId/documents/upload-url
+POST  /api/v1/shipments/:shipmentId/documents/complete-upload
 GET   /api/v1/documents/:id
 GET   /api/v1/documents/:id/status
 GET   /api/v1/documents/:id/extractions
@@ -65,7 +67,19 @@ Upload mengembalikan HTTP `202`. Upload file identik pada shipment yang sama ber
 idempotent dan mengembalikan `inspectionStatus: "duplicate"` serta document ID awal.
 Koreksi pengguna disimpan dengan nilai asli dan tidak akan ditimpa oleh reprocessing.
 
-### Parser/OCR adapter
+Untuk production di Vercel gunakan dua endpoint direct upload: minta signed upload URL,
+unggah file langsung dari frontend ke Supabase Storage, lalu panggil `complete-upload`
+dengan metadata dan SHA-256 file. Endpoint multipart tetap tersedia untuk development,
+tetapi tidak cocok untuk file besar pada platform serverless.
+
+### Parser/OCR
+
+Set `DOCUMENT_PARSER_PROVIDER=gemini`, `GEMINI_API_KEY`, dan
+`GEMINI_OCR_MODEL=gemini-flash-latest` untuk deployment serverless. File tetap private
+di Supabase; hanya worker backend yang mengunduhnya sebelum mengirim konten ke Gemini.
+
+Untuk development Docker, set `DOCUMENT_PARSER_PROVIDER=docling` dan
+`DOCUMENT_INTELLIGENCE_URL` ke service Docling/PaddleOCR. Backend memanggil
 
 Set `DOCUMENT_INTELLIGENCE_URL` ke service Docling/PaddleOCR. Backend memanggil
 `POST {DOCUMENT_INTELLIGENCE_URL}/parse` dengan payload:
@@ -101,9 +115,41 @@ Tanpa adapter, CSV dan PDF digital sederhana memiliki fallback lokal. PDF scan, 
 DOCX, dan XLSX akan berstatus `failed` dengan pesan konfigurasi yang dapat ditindaklanjuti;
 setelah adapter tersedia, endpoint `reprocess` dapat digunakan tanpa upload ulang.
 
-Job diproses oleh BullMQ apabila `REDIS_URL` tersedia (3 percobaan dengan exponential
-backoff). Tanpa Redis, development lokal tetap dapat berjalan dengan fallback in-process,
-tetapi job tersebut tidak bertahan apabila process API restart.
+Job production dipublikasikan ke Upstash QStash apabila `QSTASH_TOKEN`, kedua signing
+key, dan `API_BASE_URL` tersedia. Callback bertanda tangan menuju
+`/api/v1/internal/document-processing`. Tanpa konfigurasi itu, development lokal memakai
+fallback in-process yang tidak bertahan jika process API restart.
+
+## Deployment gratis: Vercel + Supabase + QStash + Gemini
+
+Import repository ke Vercel dengan Root Directory mengarah ke folder NestJS ini. Vercel
+mendeteksi `src/main.ts` sebagai satu function. Isi environment berikut untuk Production:
+
+```dotenv
+APP_ENV=production
+DATABASE_URL=postgresql://...transaction-pooler...:6543/postgres
+DATABASE_SSL=true
+DB_POOL_SIZE=1
+DB_SYNCHRONIZE=true
+SUPABASE_URL=https://PROJECT.supabase.co
+SUPABASE_SECRET_KEY=...
+SUPABASE_STORAGE_BUCKET=documents
+JWT_SECRET=...
+CORS_ORIGINS=https://alamat-frontend.vercel.app
+DOCUMENT_PARSER_PROVIDER=gemini
+GEMINI_API_KEY=...
+GEMINI_OCR_MODEL=gemini-flash-latest
+QSTASH_TOKEN=...
+QSTASH_CURRENT_SIGNING_KEY=...
+QSTASH_NEXT_SIGNING_KEY=...
+API_BASE_URL=https://alamat-backend.vercel.app
+AISSTREAM_ENABLED=false
+```
+
+Bucket `documents` harus private. Pada deployment pertama, `API_BASE_URL` dapat diisi
+setelah URL Vercel diketahui lalu lakukan redeploy. Periksa `/api/v1/health`; database,
+storage, parser, dan queue harus melaporkan siap. `DB_SYNCHRONIZE=true` praktis untuk
+prototipe, tetapi ganti dengan migration sebelum production yang menyimpan data penting.
 
 ## Menjalankan development stack
 
@@ -220,8 +266,8 @@ Document AI. Tanpa Redis, queue otomatis memakai fallback in-process.
   provenance. Service ini stateless dan tidak mengakses database KUBO.
 - `src/documents`: autentikasi/ownership, idempotensi, klasifikasi, field extraction,
   koreksi pengguna, dan penyimpanan `shipment_facts` untuk reuse lintas dokumen.
-- Gemini/Claude pada `src/matching` tetap khusus container matching. Dokumen tidak
-  dikirim ke provider LLM eksternal oleh baseline ini.
+- Gemini pada `src/documents` menangani parsing/OCR saat provider `gemini` aktif.
+  Gemini/Claude pada `src/matching` tetap digunakan untuk container matching.
 
 ## Description
 

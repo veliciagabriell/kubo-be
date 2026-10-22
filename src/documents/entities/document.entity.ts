@@ -7,6 +7,7 @@ import {
   ManyToOne,
   JoinColumn,
 } from 'typeorm';
+import { dateColumnTransformer } from '../../common/typeorm/date-column.transformer';
 import { User } from '../../users/entities/user.entity';
 
 export enum DocumentType {
@@ -84,7 +85,12 @@ export class Document {
   @Column({ name: 'shipment_snapshot_id', type: 'varchar', nullable: true })
   shipmentSnapshotId: string | null;
 
-  @Column({ name: 'generated_at', type: 'datetime', nullable: true })
+  @Column({
+    name: 'generated_at',
+    type: 'text',
+    nullable: true,
+    transformer: dateColumnTransformer,
+  })
   generatedAt: Date | null;
 
   @Column({ name: 'generated_by', type: 'varchar', nullable: true })
@@ -150,7 +156,12 @@ export class Document {
   @Column({ name: 'duplicate_of_id', type: 'varchar', nullable: true })
   duplicateOfId: string | null;
 
-  @Column({ name: 'last_validated_at', type: 'datetime', nullable: true })
+  @Column({
+    name: 'last_validated_at',
+    type: 'text',
+    nullable: true,
+    transformer: dateColumnTransformer,
+  })
   lastValidatedAt: Date | null;
 
   @Column({ name: 'validation_count', type: 'integer', default: 0 })

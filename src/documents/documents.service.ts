@@ -20,6 +20,7 @@ import {
 import { ShipmentFact } from './entities/shipment-fact.entity';
 import { Shipment } from '../shipments/entities/shipment.entity';
 import { DocumentGenerationService } from './generation/document-generation.service';
+import { SupabaseStorageService } from '../supabase/supabase-storage.service';
 
 export interface FieldDef {
   key: string;
@@ -407,6 +408,8 @@ export class DocumentsService {
     private readonly shipmentRepo?: Repository<Shipment>,
     @Optional()
     private readonly generationService?: DocumentGenerationService,
+    @Optional()
+    private readonly storage?: SupabaseStorageService,
   ) {}
 
   getDocumentTypes() {
@@ -502,11 +505,19 @@ export class DocumentsService {
       }
       this.validateItems(schema, dto.items);
       const buffer = await generateDocumentDocx(dto.type, fields, dto.items);
-      const dir = join(process.cwd(), 'uploads', 'documents');
-      mkdirSync(dir, { recursive: true });
       const docxFilename = `${dto.type.toLowerCase()}-${shipmentLabel}-DRAFT-${uuidv4()}.docx`;
-      writeFileSync(join(dir, docxFilename), buffer);
-      docxFileUrl = `/uploads/documents/${docxFilename}`;
+      if (this.storage) {
+        docxFileUrl = await this.storage.upload(
+          `users/${userId}/shipments/${dto.shipmentId ?? 'unassigned'}/generated-documents/${docxFilename}`,
+          buffer,
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        );
+      } else {
+        const dir = join(process.cwd(), 'uploads', 'documents');
+        mkdirSync(dir, { recursive: true });
+        writeFileSync(join(dir, docxFilename), buffer);
+        docxFileUrl = `/uploads/documents/${docxFilename}`;
+      }
     } else {
       generatedContent = this.generateLegacyContent(dto.type, fields);
     }
@@ -524,11 +535,24 @@ export class DocumentsService {
         sources: generatedSources,
       },
     );
-    const outputDir = join(process.cwd(), 'uploads', 'documents');
-    mkdirSync(outputDir, { recursive: true });
     const pdfFilename = `${dto.type.toLowerCase()}-${shipmentLabel}-DRAFT-${uuidv4()}.pdf`;
-    writeFileSync(join(outputDir, pdfFilename), pdfBuffer);
-    fileUrl = `/uploads/documents/${pdfFilename}`;
+    try {
+      if (this.storage) {
+        fileUrl = await this.storage.upload(
+          `users/${userId}/shipments/${dto.shipmentId ?? 'unassigned'}/generated-documents/${pdfFilename}`,
+          pdfBuffer,
+          'application/pdf',
+        );
+      } else {
+        const outputDir = join(process.cwd(), 'uploads', 'documents');
+        mkdirSync(outputDir, { recursive: true });
+        writeFileSync(join(outputDir, pdfFilename), pdfBuffer);
+        fileUrl = `/uploads/documents/${pdfFilename}`;
+      }
+    } catch (error) {
+      if (this.storage && docxFileUrl) await this.storage.remove([docxFileUrl]);
+      throw error;
+    }
 
     const doc = this.documentRepo.create({
       userId,
@@ -547,7 +571,13 @@ export class DocumentsService {
       generatedSources: JSON.stringify(generatedSources),
       status: 'draft_generated',
     });
-    const saved = await this.documentRepo.save(doc);
+    let saved: Document;
+    try {
+      saved = await this.documentRepo.save(doc);
+    } catch (error) {
+      if (this.storage) await this.storage.remove([fileUrl, docxFileUrl]);
+      throw error;
+    }
     return this.toResponse(saved);
   }
 

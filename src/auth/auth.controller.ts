@@ -6,15 +6,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import {
-  ApiBody,
-  ApiConsumes,
-  ApiOperation,
-  ApiTags,
-} from '@nestjs/swagger';
-import { diskStorage } from 'multer';
-import { extname } from 'path';
-import { v4 as uuidv4 } from 'uuid';
+import { ApiBody, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
@@ -64,25 +56,18 @@ export class AuthController {
   })
   @UseInterceptors(
     FileInterceptor('umkm_certificate', {
-      storage: diskStorage({
-        destination: './uploads',
-        filename: (_req, file, cb) => {
-          cb(null, `umkm-${uuidv4()}${extname(file.originalname)}`);
-        },
-      }),
       fileFilter: (_req, file, cb) => {
         const allowed = /\.(jpg|jpeg|png|pdf)$/i;
         cb(null, allowed.test(file.originalname));
       },
-      limits: { fileSize: 5 * 1024 * 1024 },
+      limits: { fileSize: 3 * 1024 * 1024 },
     }),
   )
   async register(
     @Body() dto: RegisterDto,
     @UploadedFile() file?: Express.Multer.File,
   ) {
-    const certUrl = file ? `/uploads/${file.filename}` : undefined;
-    return this.authService.register(dto, certUrl);
+    return this.authService.register(dto, file);
   }
 
   @Post('login')

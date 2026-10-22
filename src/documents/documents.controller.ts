@@ -1,6 +1,8 @@
 import {
+  BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
@@ -33,6 +35,10 @@ import { CorrectExtractedFieldDto } from './dto/correct-extracted-field.dto';
 import { DocumentAssistantService } from './document-assistant.service';
 import { GenerateDocumentDraftDto } from './dto/generate-document-draft.dto';
 import { ResolveDocumentConflictDto } from './dto/resolve-document-conflict.dto';
+import {
+  CompleteDocumentUploadDto,
+  CreateDocumentUploadDto,
+} from './dto/create-document-upload.dto';
 
 @ApiTags('Documents')
 @ApiBearerAuth('access-token')
@@ -103,6 +109,31 @@ export class DocumentsController {
   ) {
     const document = await this.intelligenceService.getDocument(id, user.id);
     return { data: document };
+  }
+
+  @Get(':id/download')
+  @ApiOperation({ summary: 'Buat signed URL sementara untuk file private' })
+  @ApiQuery({ name: 'format', required: false, enum: ['pdf', 'docx'] })
+  async getDownloadUrl(
+    @CurrentUser() user: User,
+    @Param('id') id: string,
+    @Query('format') format: 'pdf' | 'docx' = 'pdf',
+  ) {
+    if (!['pdf', 'docx'].includes(format)) {
+      throw new BadRequestException('format harus pdf atau docx');
+    }
+    return {
+      data: await this.intelligenceService.getDownloadUrl(id, user.id, format),
+    };
+  }
+
+  @Delete(':id')
+  @ApiOperation({ summary: 'Hapus record dan file dokumen private' })
+  async deleteDocument(@CurrentUser() user: User, @Param('id') id: string) {
+    return {
+      message: 'Document deleted successfully',
+      data: await this.intelligenceService.deleteDocument(id, user.id),
+    };
   }
 
   @Get(':id/extractions')
@@ -254,6 +285,44 @@ export class DocumentIntelligenceController {
         user.id,
         shipmentId,
         file,
+        dto,
+      ),
+    };
+  }
+
+  @Post('shipments/:shipmentId/documents/upload-url')
+  @ApiOperation({
+    summary: 'Buat signed URL agar file langsung diunggah ke Supabase Storage',
+  })
+  async createUploadUrl(
+    @CurrentUser() user: User,
+    @Param('shipmentId') shipmentId: string,
+    @Body() dto: CreateDocumentUploadDto,
+  ) {
+    return {
+      data: await this.intelligenceService.createUploadUrl(
+        user.id,
+        shipmentId,
+        dto,
+      ),
+    };
+  }
+
+  @Post('shipments/:shipmentId/documents/complete-upload')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @ApiOperation({
+    summary: 'Daftarkan upload Supabase dan antrekan OCR melalui QStash',
+  })
+  async completeUpload(
+    @CurrentUser() user: User,
+    @Param('shipmentId') shipmentId: string,
+    @Body() dto: CompleteDocumentUploadDto,
+  ) {
+    return {
+      message: 'Document accepted for processing',
+      data: await this.intelligenceService.completeUpload(
+        user.id,
+        shipmentId,
         dto,
       ),
     };

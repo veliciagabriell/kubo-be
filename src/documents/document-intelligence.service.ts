@@ -6,11 +6,15 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { createHash, randomUUID } from 'crypto';
-import { mkdir, readFile, writeFile } from 'fs/promises';
-import { extname, join } from 'path';
+import { extname } from 'path';
 import { FindOptionsWhere, Repository } from 'typeorm';
 import { Shipment } from '../shipments/entities/shipment.entity';
+import { SupabaseStorageService } from '../supabase/supabase-storage.service';
 import { CorrectExtractedFieldDto } from './dto/correct-extracted-field.dto';
+import {
+  CompleteDocumentUploadDto,
+  CreateDocumentUploadDto,
+} from './dto/create-document-upload.dto';
 import { UploadDocumentDto } from './dto/upload-document.dto';
 import {
   Document,
@@ -50,12 +54,77 @@ export class DocumentIntelligenceService implements OnModuleInit {
     private readonly parser: DocumentParserService,
     private readonly extractor: DocumentExtractorService,
     private readonly processingQueue: DocumentProcessingQueueService,
+    private readonly storage: SupabaseStorageService,
   ) {}
 
   onModuleInit(): void {
     this.processingQueue.registerProcessor((documentId) =>
       this.process(documentId),
     );
+  }
+
+  async createUploadUrl(
+    userId: string,
+    shipmentId: string,
+    dto: CreateDocumentUploadDto,
+  ) {
+    const shipment = await this.findOwnedShipment(shipmentId, userId);
+    if (!shipment) throw new NotFoundException('Shipment not found');
+    this.validateFileMetadata(dto.fileName, dto.fileSize);
+    const storedName = `${randomUUID()}${extname(dto.fileName).toLowerCase()}`;
+    const objectPath = `users/${userId}/shipments/${shipment.id}/source-documents/${storedName}`;
+    return this.storage.createSignedUploadUrl(objectPath);
+  }
+
+  async completeUpload(
+    userId: string,
+    shipmentId: string,
+    dto: CompleteDocumentUploadDto,
+  ) {
+    const shipment = await this.findOwnedShipment(shipmentId, userId);
+    if (!shipment) throw new NotFoundException('Shipment not found');
+    this.validateFileMetadata(dto.fileName, dto.fileSize);
+    this.storage.assertReferenceWithin(
+      dto.storageReference,
+      `users/${userId}/shipments/${shipment.id}/source-documents`,
+    );
+
+    const duplicate = await this.documentRepo.findOne({
+      where: { userId, shipmentId: shipment.id, sha256: dto.sha256 },
+      order: { createdAt: 'ASC' },
+    });
+    if (duplicate) {
+      await this.storage.remove([dto.storageReference]);
+      return {
+        ...this.toDocumentResult(duplicate),
+        inspectionStatus: FileInspectionStatus.DUPLICATE,
+        duplicateOfId: duplicate.id,
+        idempotentReplay: true,
+      };
+    }
+
+    const document = await this.documentRepo.save(
+      this.documentRepo.create({
+        userId,
+        shipmentId: shipment.id,
+        type: dto.declaredDocumentType ?? null,
+        declaredDocumentType: dto.declaredDocumentType ?? null,
+        fields: '{}',
+        items: null,
+        generatedContent: null,
+        fileUrl: dto.storageReference,
+        status: ProcessingStatus.QUEUED,
+        originalFileName: dto.fileName,
+        mimeType: dto.mimeType,
+        fileSize: dto.fileSize,
+        sha256: dto.sha256,
+        fileVersion: 1,
+        inspectionStatus: FileInspectionStatus.VALID,
+        processingStatus: ProcessingStatus.QUEUED,
+      }),
+    );
+    await this.processingQueue.enqueue(document.id);
+    return { ...this.toDocumentResult(document), idempotentReplay: false };
   }
 
   async upload(
@@ -86,32 +155,40 @@ export class DocumentIntelligenceService implements OnModuleInit {
       };
     }
 
-    const uploadDir = join(process.cwd(), 'uploads', 'source-documents');
-    await mkdir(uploadDir, { recursive: true });
     const storedName = `${randomUUID()}${extname(file.originalname).toLowerCase()}`;
-    const filePath = join(uploadDir, storedName);
-    await writeFile(filePath, file.buffer);
-
-    const document = await this.documentRepo.save(
-      this.documentRepo.create({
-        userId,
-        shipmentId: shipment.id,
-        type: dto.declaredDocumentType ?? null,
-        declaredDocumentType: dto.declaredDocumentType ?? null,
-        fields: '{}',
-        items: null,
-        generatedContent: null,
-        fileUrl: `/uploads/source-documents/${storedName}`,
-        status: 'uploaded',
-        originalFileName: file.originalname,
-        mimeType: file.mimetype,
-        fileSize: file.size,
-        sha256: hash,
-        fileVersion: 1,
-        inspectionStatus: FileInspectionStatus.VALID,
-        processingStatus: ProcessingStatus.QUEUED,
-      }),
+    const objectPath = `users/${userId}/shipments/${shipment.id}/source-documents/${storedName}`;
+    const fileReference = await this.storage.upload(
+      objectPath,
+      file.buffer,
+      file.mimetype,
     );
+
+    let document: Document;
+    try {
+      document = await this.documentRepo.save(
+        this.documentRepo.create({
+          userId,
+          shipmentId: shipment.id,
+          type: dto.declaredDocumentType ?? null,
+          declaredDocumentType: dto.declaredDocumentType ?? null,
+          fields: '{}',
+          items: null,
+          generatedContent: null,
+          fileUrl: fileReference,
+          status: 'uploaded',
+          originalFileName: file.originalname,
+          mimeType: file.mimetype,
+          fileSize: file.size,
+          sha256: hash,
+          fileVersion: 1,
+          inspectionStatus: FileInspectionStatus.VALID,
+          processingStatus: ProcessingStatus.QUEUED,
+        }),
+      );
+    } catch (error) {
+      await this.storage.remove([fileReference]);
+      throw error;
+    }
 
     await this.processingQueue.enqueue(document.id);
     return { ...this.toDocumentResult(document), idempotentReplay: false };
@@ -127,9 +204,20 @@ export class DocumentIntelligenceService implements OnModuleInit {
       document.processingStatus = ProcessingStatus.PARSING;
       document.errorMessage = null;
       await this.documentRepo.save(document);
-      const buffer = await readFile(
-        join(process.cwd(), document.fileUrl.replace(/^\//, '')),
-      );
+      const buffer = await this.storage.download(document.fileUrl);
+      const inspection = this.inspectBuffer(document.originalFileName, buffer);
+      if (inspection !== FileInspectionStatus.VALID) {
+        throw new BadRequestException(`File inspection failed: ${inspection}`);
+      }
+      const actualHash = createHash('sha256').update(buffer).digest('hex');
+      if (document.sha256 && document.sha256 !== actualHash) {
+        throw new BadRequestException(
+          'File checksum does not match upload metadata',
+        );
+      }
+      document.sha256 = actualHash;
+      document.fileSize = buffer.length;
+      document.inspectionStatus = FileInspectionStatus.VALID;
       const parsed = await this.parser.parse(
         buffer,
         document.originalFileName,
@@ -204,6 +292,33 @@ export class DocumentIntelligenceService implements OnModuleInit {
     return this.toDocumentResult(document);
   }
 
+  async getDownloadUrl(
+    id: string,
+    userId: string,
+    format: 'pdf' | 'docx' = 'pdf',
+  ) {
+    const document = await this.findOwnedDocument(id, userId);
+    const reference =
+      format === 'docx' ? document.docxFileUrl : document.fileUrl;
+    if (!reference) {
+      throw new NotFoundException(`File ${format.toUpperCase()} not found`);
+    }
+    const originalName =
+      document.originalFileName ?? `document-${id}.${format}`;
+    const downloadName =
+      format === 'docx'
+        ? originalName.replace(/\.pdf$/i, '.docx')
+        : originalName;
+    return this.storage.createSignedUrl(reference, downloadName);
+  }
+
+  async deleteDocument(id: string, userId: string) {
+    const document = await this.findOwnedDocument(id, userId);
+    await this.storage.remove([document.fileUrl, document.docxFileUrl]);
+    await this.documentRepo.remove(document);
+    return { documentId: id, deleted: true };
+  }
+
   async getExtractions(id: string, userId: string) {
     await this.findOwnedDocument(id, userId);
     const fields = await this.fieldRepo.find({
@@ -267,12 +382,21 @@ export class DocumentIntelligenceService implements OnModuleInit {
   }
 
   private inspect(file: Express.Multer.File): FileInspectionStatus {
-    if (file.size > MAX_FILE_SIZE) return FileInspectionStatus.TOO_LARGE;
-    const extension = extname(file.originalname).toLowerCase();
+    return this.inspectBuffer(file.originalname, file.buffer, file.size);
+  }
+
+  private inspectBuffer(
+    fileName: string,
+    buffer: Buffer,
+    declaredSize = buffer.length,
+  ): FileInspectionStatus {
+    if (declaredSize > MAX_FILE_SIZE || buffer.length > MAX_FILE_SIZE)
+      return FileInspectionStatus.TOO_LARGE;
+    const extension = extname(fileName).toLowerCase();
     if (!SUPPORTED_EXTENSIONS.has(extension))
       return FileInspectionStatus.UNSUPPORTED;
-    if (!file.buffer?.length) return FileInspectionStatus.CORRUPTED;
-    const magic = file.buffer.subarray(0, 8);
+    if (!buffer?.length) return FileInspectionStatus.CORRUPTED;
+    const magic = buffer.subarray(0, 8);
     const signatures: Partial<Record<string, boolean>> = {
       '.pdf': magic.subarray(0, 5).toString() === '%PDF-',
       '.png': magic.equals(
@@ -291,6 +415,20 @@ export class DocumentIntelligenceService implements OnModuleInit {
     };
     if (signatures[extension] === false) return FileInspectionStatus.CORRUPTED;
     return FileInspectionStatus.VALID;
+  }
+
+  private validateFileMetadata(fileName: string, fileSize: number): void {
+    if (!fileName || fileName.length > 255) {
+      throw new BadRequestException('Invalid file name');
+    }
+    if (fileSize < 1 || fileSize > MAX_FILE_SIZE) {
+      throw new BadRequestException(
+        'File size must be between 1 byte and 25 MB',
+      );
+    }
+    if (!SUPPORTED_EXTENSIONS.has(extname(fileName).toLowerCase())) {
+      throw new BadRequestException('Unsupported file extension');
+    }
   }
 
   private async findOwnedDocument(

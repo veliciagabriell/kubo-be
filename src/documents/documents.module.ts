@@ -22,6 +22,7 @@ import { DocumentGenerationService } from './generation/document-generation.serv
 import { DocxTemplateRenderer } from './renderers/docx-template.renderer';
 import { TemplatePdfRenderer } from './renderers/template-pdf.renderer';
 import { DocumentTemplateRegistry } from './templates/document-template.registry';
+import { DocumentProcessingController } from './document-processing.controller';
 
 @Module({
   imports: [
@@ -35,7 +36,11 @@ import { DocumentTemplateRegistry } from './templates/document-template.registry
       Vessel,
     ]),
   ],
-  controllers: [DocumentsController, DocumentIntelligenceController],
+  controllers: [
+    DocumentsController,
+    DocumentIntelligenceController,
+    DocumentProcessingController,
+  ],
   providers: [
     DocumentsService,
     DocumentIntelligenceService,
@@ -53,6 +58,8 @@ import { DocumentTemplateRegistry } from './templates/document-template.registry
     DocumentIntelligenceService,
     DocumentAssistantService,
     DocumentGenerationService,
+    DocumentProcessingQueueService,
+    DocumentParserService,
   ],
 })
 export class DocumentsModule {}

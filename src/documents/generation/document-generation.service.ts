@@ -1,9 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { mkdir, writeFile } from 'fs/promises';
-import { join } from 'path';
 import { Repository } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
+import { SupabaseStorageService } from '../../supabase/supabase-storage.service';
 import { CanonicalShipmentService } from '../canonical/canonical-shipment.service';
 import {
   Document,
@@ -41,6 +40,7 @@ export class DocumentGenerationService {
     private readonly registry: DocumentTemplateRegistry,
     private readonly docxRenderer: DocxTemplateRenderer,
     private readonly pdfRenderer: TemplatePdfRenderer,
+    private readonly storage: SupabaseStorageService,
   ) {}
 
   async generateDocument(
@@ -85,14 +85,25 @@ export class DocumentGenerationService {
     const snapshotId = uuidv4();
     const safeShipment = canonical.shipmentCode.replace(/[^A-Za-z0-9_-]/g, '_');
     const baseName = `${type.toLowerCase()}-${safeShipment}-DRAFT-v${fileVersion}-${snapshotId.slice(0, 8)}`;
-    const outputDirectory = join(process.cwd(), 'uploads', 'documents');
-    await mkdir(outputDirectory, { recursive: true });
     const docxName = `${baseName}.docx`;
     const pdfName = `${baseName}.pdf`;
-    await Promise.all([
-      writeFile(join(outputDirectory, docxName), docxBuffer),
-      writeFile(join(outputDirectory, pdfName), pdfBuffer),
-    ]);
+    const objectDirectory = `users/${userId}/shipments/${canonical.shipmentId}/generated-documents`;
+    const docxFileUrl = await this.storage.upload(
+      `${objectDirectory}/${docxName}`,
+      docxBuffer,
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    );
+    let fileUrl: string;
+    try {
+      fileUrl = await this.storage.upload(
+        `${objectDirectory}/${pdfName}`,
+        pdfBuffer,
+        'application/pdf',
+      );
+    } catch (error) {
+      await this.storage.remove([docxFileUrl]);
+      throw error;
+    }
     const sources = [
       'company_profile',
       'shipment',
@@ -113,15 +124,21 @@ export class DocumentGenerationService {
       generatedAt: new Date(),
       generatedBy: userId,
       generatedSources: JSON.stringify(sources),
-      fileUrl: `/uploads/documents/${pdfName}`,
-      docxFileUrl: `/uploads/documents/${docxName}`,
+      fileUrl,
+      docxFileUrl,
       originalFileName: `${definition.label}_${canonical.shipmentCode}_DRAFT_v${fileVersion}.pdf`,
       mimeType: 'application/pdf',
       fileSize: pdfBuffer.length,
       fileVersion,
       status: 'draft_generated',
     });
-    const saved = await this.documentRepo.save(entity);
+    let saved: Document;
+    try {
+      saved = await this.documentRepo.save(entity);
+    } catch (error) {
+      await this.storage.remove([fileUrl, docxFileUrl]);
+      throw error;
+    }
     return {
       status: 'draft_generated',
       document: {

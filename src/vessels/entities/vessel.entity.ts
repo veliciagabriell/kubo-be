@@ -5,6 +5,7 @@ import {
   PrimaryColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import { dateColumnTransformer } from '../../common/typeorm/date-column.transformer';
 
 /**
  * A vessel tracked via live AIS (AISstream.io), or an explicitly labelled
@@ -89,11 +90,21 @@ export class Vessel {
   @Column({ name: 'last_course_deg', type: 'real', nullable: true })
   lastCourseDeg: number | null;
 
-  @Column({ name: 'last_position_at', type: 'datetime', nullable: true })
+  @Column({
+    name: 'last_position_at',
+    type: 'text',
+    nullable: true,
+    transformer: dateColumnTransformer,
+  })
   lastPositionAt: Date | null;
 
   /** When ShipStaticData was last received for this vessel - distinct from lastPositionAt, since capacity/fullness only refresh from static messages. */
-  @Column({ name: 'last_static_data_at', type: 'datetime', nullable: true })
+  @Column({
+    name: 'last_static_data_at',
+    type: 'text',
+    nullable: true,
+    transformer: dateColumnTransformer,
+  })
   lastStaticDataAt: Date | null;
 
   @CreateDateColumn({ name: 'first_seen_at' })

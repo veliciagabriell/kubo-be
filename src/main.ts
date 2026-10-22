@@ -6,13 +6,20 @@ import { join } from 'path';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    rawBody: true,
+  });
 
-  app.useGlobalPipes(
-    new ValidationPipe({ whitelist: true, transform: true }),
-  );
+  app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
 
-  app.enableCors();
+  const configuredOrigins = (process.env.CORS_ORIGINS ?? '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+  app.enableCors({
+    origin: configuredOrigins.length > 0 ? configuredOrigins : true,
+    credentials: true,
+  });
   app.setGlobalPrefix('api/v1');
   app.useStaticAssets(join(process.cwd(), 'uploads'), { prefix: '/uploads' });
 
@@ -20,7 +27,7 @@ async function bootstrap() {
     .setTitle('KUBO API')
     .setDescription(
       'KUBO Export Platform – API untuk UMKM Indonesia mengekspor ke mancanegara.\n\n' +
-      'Fitur: Autentikasi, Document Assistant, Smart Container Matching, Checkout & Payment.',
+        'Fitur: Autentikasi, Document Assistant, Smart Container Matching, Checkout & Payment.',
     )
     .setVersion('1.0')
     .addBearerAuth(
@@ -30,7 +37,10 @@ async function bootstrap() {
     .addTag('Auth', 'Registrasi dan Login')
     .addTag('Users', 'Profil pengguna')
     .addTag('Documents', 'Document Assistant – generate dokumen ekspor')
-    .addTag('Vessels', 'Pelacakan kapal live via AIS (AISstream.io) – Indonesia → Jepang')
+    .addTag(
+      'Vessels',
+      'Pelacakan kapal live via AIS (AISstream.io) – Indonesia → Jepang',
+    )
     .addTag('Matching', 'Smart Container Matching berbasis AI')
     .addTag('Orders', 'Checkout, pembayaran, dan riwayat pengiriman')
     .addTag('Shipments', 'Data pengiriman ekspor UMKM')
@@ -47,4 +57,4 @@ async function bootstrap() {
   console.log(`KUBO API running at: http://localhost:${port}/api/v1`);
   console.log(`Swagger docs    at: http://localhost:${port}/api/docs`);
 }
-bootstrap();
+void bootstrap();

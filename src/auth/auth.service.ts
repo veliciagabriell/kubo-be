@@ -8,15 +8,19 @@ import * as bcrypt from 'bcrypt';
 import { UsersService } from '../users/users.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { SupabaseStorageService } from '../supabase/supabase-storage.service';
+import { randomUUID } from 'crypto';
+import { extname } from 'path';
 
 @Injectable()
 export class AuthService {
   constructor(
     private readonly usersService: UsersService,
     private readonly jwtService: JwtService,
+    private readonly storage: SupabaseStorageService,
   ) {}
 
-  async register(dto: RegisterDto, umkmCertificateUrl?: string) {
+  async register(dto: RegisterDto, certificate?: Express.Multer.File) {
     const existing = await this.usersService.findByEmail(dto.email);
     if (existing) throw new ConflictException('Email already registered');
 
@@ -30,10 +34,30 @@ export class AuthService {
       ownerAddress: dto.ownerAddress,
       businessAddress: dto.businessAddress,
       nib: dto.nib,
-      umkmCertificateUrl,
     });
 
-    const { password: _, ...result } = user as any;
+    if (certificate) {
+      const objectPath = `users/${user.id}/certificates/${randomUUID()}${extname(certificate.originalname).toLowerCase()}`;
+      let certificateReference: string | undefined;
+      try {
+        certificateReference = await this.storage.upload(
+          objectPath,
+          certificate.buffer,
+          certificate.mimetype,
+        );
+        user.umkmCertificateUrl = certificateReference;
+        await this.usersService.create(user);
+      } catch (error) {
+        if (certificateReference) {
+          await this.storage.remove([certificateReference]);
+        }
+        await this.usersService.deleteById(user.id);
+        throw error;
+      }
+    }
+
+    const { password: omittedPassword, ...result } = user;
+    void omittedPassword;
     return {
       message: 'Registration successful',
       user: result,
@@ -48,7 +72,8 @@ export class AuthService {
     const isMatch = await bcrypt.compare(dto.password, user.password);
     if (!isMatch) throw new UnauthorizedException('Invalid credentials');
 
-    const { password: _, ...result } = user as any;
+    const { password: omittedPassword, ...result } = user;
+    void omittedPassword;
     return {
       message: 'Login successful',
       user: result,

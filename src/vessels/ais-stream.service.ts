@@ -150,6 +150,14 @@ export class AisStreamService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   onModuleInit() {
+    const explicitlyEnabled =
+      (process.env.AISSTREAM_ENABLED ?? 'true').toLowerCase() === 'true';
+    if (!explicitlyEnabled || process.env.VERCEL === '1') {
+      this.logger.warn(
+        'Live AIS WebSocket is disabled for this runtime. Run it in a persistent worker/container.',
+      );
+      return;
+    }
     const apiKey = process.env.AISSTREAM_API_KEY;
     if (!apiKey) {
       this.logger.warn(
